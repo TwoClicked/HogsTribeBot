@@ -30,6 +30,14 @@ namespace TribeBot.Services.Services
             if (member == null)
                 throw new Exception("User is not registered.");
 
+            // load exisiting reign applications
+            var existing = await _dataStore.GetAllReignRegistrationsAsync();
+
+            //already applied? 
+            if (existing.Any(r => r.DiscordUserId == discordUserId))
+                throw new Exception("Don't double-date us! You're already registered");
+
+
             var reg = new ReignRegistration
             {
                 DiscordUserId = discordUserId,
@@ -47,7 +55,7 @@ namespace TribeBot.Services.Services
 
             var joined = from reg in registrations
                          join m in allMembers on reg.DiscordUserId equals m.DiscordUserId
-                         orderby m.ReignPoints descending
+                         orderby m.ReignPoints descending 
                          select (m, reg);
 
             return joined.ToList();

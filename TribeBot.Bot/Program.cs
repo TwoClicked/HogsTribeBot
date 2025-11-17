@@ -3,6 +3,7 @@ using Discord.WebSocket;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using TribeBot.Data.GoogleSheets;
 using TribeBot.Data.Interfaces;
@@ -16,6 +17,8 @@ namespace TribeBot.Bot
     {
         private DiscordSocketClient _client;
         private IServiceProvider _services;
+        private DateTime _lastReminderDate = DateTime.MinValue;
+        private bool _reignLocked = false;
 
         // Track ongoing registration sessions
         private Dictionary<ulong, RegistrationSession> _registrationSessions = new();
@@ -39,6 +42,7 @@ namespace TribeBot.Bot
             _client.Log += LogAsync;
             _client.Ready += ReadyAsync;
             _client.MessageReceived += MessageReceivedAsync;
+            _client.InteractionCreated += HandleInteractionAsync;
 
             string token = Environment.GetEnvironmentVariable("DISCORD_TOKEN");
 
@@ -79,11 +83,160 @@ namespace TribeBot.Bot
             return Task.CompletedTask;
         }
 
-        private Task ReadyAsync()
+        private async Task ReadyAsync()
         {
             Console.WriteLine($"Connected as {_client.CurrentUser}");
-            return Task.CompletedTask;
+
+            // ======================================================
+            // REGISTER GLOBAL SLASH COMMAND (REQUIRED FOR BADGE)
+            // ======================================================
+            try
+            {
+                var globalCommand = new SlashCommandBuilder()
+                    .WithName("checkbot")
+                    .WithDescription("Checks if the bot is online globally.");
+
+                await _client.CreateGlobalApplicationCommandAsync(globalCommand.Build());
+                Console.WriteLine("GLOBAL slash command '/checkbot' registered.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error registering GLOBAL slash command: " + ex.Message);
+            }
+
+            // ======================================================
+            // REGISTER GUILD SLASH COMMAND (INSTANT UPDATE)
+            // ======================================================
+            var guild = _client.GetGuild(1109193500664287336); // your guild ID
+
+            var guildCommand = new SlashCommandBuilder()
+                .WithName("checkbot")
+                .WithDescription("Checks if the bot is online.");
+
+            try
+            {
+                await guild.CreateApplicationCommandAsync(guildCommand.Build());
+                Console.WriteLine("GUILD slash command '/checkbot' registered.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error registering GUILD slash command: " + ex.Message);
+            }
+
+            // Reminders
+            StartRegistrationReminderLoop();
         }
+
+
+        private void StartRegistrationReminderLoop()
+        {
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    try
+                    {
+                        var now = DateTime.UtcNow;
+
+                        // Trigger reminder at 20:00 UTC, once per day
+                        if (now.Hour == 20 && now.Minute == 0 && _lastReminderDate.Date != now.Date)
+                        {
+                            _lastReminderDate = now.Date;
+                            await SendRegistrationRemindersAsync();
+                        }
+
+                        // TEST
+
+                        //if (now.Minute % 2 == 0)
+                        //{
+                        //    await SendRegistrationRemindersAsync();
+                        //}
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Reminder error: {ex.Message}");
+                    }
+
+                    await Task.Delay(TimeSpan.FromMinutes(1));
+                }
+            });
+        }
+
+        // ======================================================
+        // REMINDERS FOR UNREGISTERED USERS
+        // ======================================================
+
+        private async Task SendRegistrationRemindersAsync()
+        {
+            try
+            {
+                var guild = _client.GetGuild(1109193500664287336); // ID of the server
+
+                if (guild == null)
+                {
+                    Console.WriteLine("Server not found");
+                    return;
+                }
+
+                //var hogsRole = guild.GetRole(1222668156271591485) // Members Hogs role code CHANGE WHEN LIVE
+                var hogsRole = guild.GetRole(1439972286877794314); // test role
+
+                if (hogsRole == null)
+                {
+                    Console.WriteLine("Hogs role not found");
+                    return;
+                }
+
+                // Get list of the registered members from the sheets (THESE DO NOT NEED TO BE REMINDED TO REGISTER)
+
+                var memberService = _services.GetService<IMemberService>();
+                var registered = await memberService.GetAllMembersAsync();
+                var registeredIds = new HashSet<string>(registered.Select(m => m.DiscordUserId));
+
+                //Filter for unregistered hogs users 
+                var unregistered = new List<SocketGuildUser>();
+
+                foreach (var user in hogsRole.Members)
+                {
+                    if (!registeredIds.Contains(user.Id.ToString()))
+                    {
+                        unregistered.Add(user); // new list created only with unregistered users with HOGS role
+                    }
+                }
+
+                if (unregistered.Count == 0)
+                {
+                    Console.WriteLine("All hogs have been registered, Checking back tomorrow");
+                    return;
+                }
+
+                Console.WriteLine($"Sending DM reminders to {unregistered.Count} users...");
+
+                //Send dm reminders
+                foreach (var user in unregistered)
+                {
+                    try
+                    {
+                        var dm = await user.CreateDMChannelAsync();
+
+                        await dm.SendMessageAsync(
+                            $"Hello {user.Username}! 👋\n\n" +
+                            "**You still need to register with the Tribe Bot.**\n\n" +
+                            "Please send `!register` here in DM to begin your registration.\n\n" +
+                            "Thank you! 😊");
+                    }
+                    catch
+                    {
+                        Console.WriteLine($"Could not DM {user.Username}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Reminder job failed: {ex.Message}");
+            }
+        }
+
 
         private async Task MessageReceivedAsync(SocketMessage message)
         {
@@ -98,7 +251,6 @@ namespace TribeBot.Bot
 
             if (message.Content.Equals("!register", StringComparison.OrdinalIgnoreCase))
             {
-
                 ulong guildId = 1109193500664287336;
                 var guild = _client.GetGuild(guildId);
                 var guildUser = guild?.GetUser(userId);
@@ -136,7 +288,10 @@ namespace TribeBot.Bot
                 return;
             }
 
-            // Continue registration (DM only)
+            // ============================
+            // CONTINUE REGISTRATION FLOW
+            // ============================
+
             if (isDM && _registrationSessions.ContainsKey(userId))
             {
                 var session = _registrationSessions[userId];
@@ -151,7 +306,6 @@ namespace TribeBot.Bot
                         return;
 
                     case RegistrationSession.Step.AskIngameId:
-
                         var ingameIdInput = message.Content.Trim();
 
                         if (!long.TryParse(ingameIdInput, out _))
@@ -197,7 +351,6 @@ namespace TribeBot.Bot
                         }
 
                         session.CollectorLevel = collector;
-                        session.CurrentStep = RegistrationSession.Step.Complete;
 
                         // Save to Google Sheets
                         var newMember = new Member
@@ -215,10 +368,159 @@ namespace TribeBot.Bot
 
                         await memberService.RegisterOrUpdateAsync(newMember);
 
-                        await message.Channel.SendMessageAsync("🎉 **Registration complete!**\nYou are now registered in the tribe database!, If you wish to update anything type !register");
+                        await message.Channel.SendMessageAsync("🎉 **Registration complete!**\nYou are now registered in the tribe database! If you wish to update anything type `!register` again.");
 
                         _registrationSessions.Remove(userId);
                         return;
+                }
+            }
+
+            // ============================
+            // APPLY FOR REIGN EVENT
+            // ============================
+
+            if (message.Content.Equals("!applyreign", StringComparison.OrdinalIgnoreCase))
+            {
+
+
+                if (_reignLocked)
+                {
+                    await message.Channel.SendMessageAsync("⛔ You lack the key to success (Reign list is currently locked message an officer for more information)");
+                    return;
+                }
+
+                var reignService = _services.GetService<IReignService>();
+                var memberService = _services.GetService<IMemberService>();
+
+                // Must be registered
+                var member = await memberService.GetMemberByDiscordIdAsync(message.Author.Id.ToString());
+
+                if (member == null)
+                {
+                    await message.Channel.SendMessageAsync($"{message.Author.Mention} You must register first, Please type `!register`.");
+                    return;
+                }
+
+                //Apply
+                try
+                {
+                    await reignService.ApplyAsync(message.Author.Id.ToString());
+                    await message.Channel.SendMessageAsync($"{message.Author.Mention} You've been added in the viking reign list, type !listreign to view your ranking");
+                }
+                catch (Exception ex)
+                {
+                    await message.Channel.SendMessageAsync($"{message.Author.Mention} {ex.Message}");
+                    Console.WriteLine(ex.ToString());
+                }
+                return;
+            }
+
+            // ============================
+            // LIST ALL REIGN APPLICANTS
+            // ============================
+
+            if (message.Content.Equals("!listreign", StringComparison.OrdinalIgnoreCase))
+            {
+                var reignService = _services.GetService<IReignService>();
+                var results = await reignService.GetCurrentRegistrationsSortedAsync();
+
+                if (results.Count == 0)
+                {
+                    await message.Channel.SendMessageAsync("Nobody has applied for the reign event yet.");
+                    return;
+                }
+
+                string output = "🏆 **Reign Applicants (sorted by Reign Points(ASC))**:\n\n";
+
+                int position = 1;
+
+                foreach (var (member, reg) in results)
+                {
+                    output += $"{position}) **{member.IngameName}** - {member.ReignPoints} pts\n";
+                    position++;
+                }
+
+                await message.Channel.SendMessageAsync(output);
+                return;
+            }
+
+            // ============================
+            // CLEAR REIGN REGISTRATION LIST (HOGS R4 OFFICERS ONLY)
+            // ============================
+
+            if (message.Content.Equals("!clearreign", StringComparison.OrdinalIgnoreCase))
+            {
+                if (message.Channel is SocketGuildChannel guildChannel)
+                {
+                    var guildUser = message.Author as SocketGuildUser;
+
+
+                    //Officer role check 
+                    bool isOfficer = guildUser.Roles.Any(r => r.Id == 1222665812775534592);
+
+                    if (!isOfficer)
+                    {
+                        await message.Channel.SendMessageAsync($"{message.Author.Mention} Oi you cheeky cunt, tryna clear the reign list? nice try, peasants can't use this sorry not sorry.");
+                        return;
+                    }
+
+                    var reignService = _services.GetService<IReignService>();
+                    await reignService.ClearAsync();
+
+                    await message.Channel.SendMessageAsync("🧹 **Reign application list has been cleared by an officer!**");
+                    return;
+                }
+            }
+
+            // ============================
+            // LOCK REIGN APPLICATIONS (HOGS R4 OFFICERS ONLY)
+            // ============================
+
+            if (message.Content.Equals("!lockreign", StringComparison.OrdinalIgnoreCase))
+            {
+                if(message.Channel is SocketGuildChannel)
+                {
+                    var guildUser = message.Author as SocketGuildUser;
+
+                    //Officer role check 
+                    bool isOfficer = guildUser.Roles.Any(r => r.Id == 1222665812775534592);
+
+                    if (!isOfficer)
+                    {
+                        await message.Channel.SendMessageAsync($"{message.Author.Mention} you've got the wrong key to lock this door chap, stop being a retard. (Officer only command)");
+                        return;
+                    }
+
+                    _reignLocked = true;
+
+                    await message.Channel.SendMessageAsync("🔒 **Reign applications are now LOCKED.**");
+                    return;
+                }
+            }
+
+            // ============================
+            // UNLOCK REIGN APPLICATIONS (HOGS R4 OFFICERS ONLY)
+            // ============================
+
+            if (message.Content.Equals("!unlockreign", StringComparison.OrdinalIgnoreCase))
+            {
+                if (message.Channel is SocketGuildChannel)
+                {
+                    var guildUser = message.Author as SocketGuildUser;
+
+                    //Officer role check 
+                    bool isOfficer = guildUser.Roles.Any(r => r.Id == 1222665812775534592);
+
+                    if (!isOfficer)
+                    {
+                        await message.Channel.SendMessageAsync($"{message.Author.Mention} You shall not unlock this list, You have no power here...., List remains locked (Officer only command)");
+                        return;
+                    }
+
+                    _reignLocked = false;
+
+                    await message.Channel.SendMessageAsync("🔓 **Reign applications are now UNLOCKED.**");
+                    return;
                 }
             }
 
@@ -247,6 +549,29 @@ namespace TribeBot.Bot
                 }
 
                 return;
+            }
+        }
+        // ============================
+        // SLASH COMMAND HANDLER
+        // ============================
+
+        private async Task HandleInteractionAsync(SocketInteraction interaction)
+        {
+            try
+            {
+                if (interaction is SocketSlashCommand slashCommand)
+                {
+                    switch (slashCommand.Data.Name)
+                    {
+                        case "checkbot":
+                            await slashCommand.RespondAsync("Bot is online and running! ⚡");
+                            break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Interaction error: " + ex.Message);
             }
         }
     }
