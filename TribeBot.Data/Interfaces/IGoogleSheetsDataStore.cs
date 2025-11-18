@@ -13,6 +13,8 @@ namespace TribeBot.Data.Interfaces
         Task<Member?> GetMemberAsync(string discordUserId);
         Task<List<Member>> GetAllMembersAsync();
         Task SaveMemberAsync(Member member);
+        Task<bool> RemoveMemberByDiscordIdAsync(string discordId);
+
 
         // Reign registrations
         Task AddReignRegistrationAsync(ReignRegistration reg);
@@ -22,5 +24,11 @@ namespace TribeBot.Data.Interfaces
         // Donations
         Task AddDonationAsync(DonationRecord record);
         Task<List<DonationRecord>> GetDonationsForWeekAsync(DateTime weekStartUtc);
+
+        // Fines 
+        Task AddFineAsync(FineRecord fine);
+        Task<List<FineRecord>> GetAllFinesAsync();
+        Task UpdateFineAsync(FineRecord fine);
+        Task RemoveFineByIdAsync(string fineId);
     }
 }

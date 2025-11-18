@@ -12,5 +12,9 @@ namespace TribeBot.Services.Interfaces
         Task AddDonationAsync(DonationRecord record);
         Task<List<DonationRecord>> GetDonationsForCurrentWeekAsync();
         Task<List<Member>> GetMembersMissingDonationsAsync();
+
+        Task<int> GetTotalForUserThisWeekAsync(string discordUserId);
+        Task<Dictionary<string, int>> GetTotalsForAllUsersThisWeekAsync();
+
     }
 }

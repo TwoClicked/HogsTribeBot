@@ -49,5 +49,31 @@ namespace TribeBot.Services.Services
                 .Where(m => !donatedIds.Contains(m.DiscordUserId))
                 .ToList();
         }
+        public async Task<int> GetTotalForUserThisWeekAsync(string discordUserId)
+        {
+            var now = DateTime.UtcNow;
+            int daysSinceMonday = ((int)now.DayOfWeek + 6) % 7;
+            DateTime weekStart = now.Date.AddDays(-daysSinceMonday);
+
+            var donations = await _dataStore.GetDonationsForWeekAsync(weekStart);
+
+            return donations
+                .Where(d => d.DiscordUserId == discordUserId)
+                .Sum(d => d.Amount);
+        }
+
+        public async Task<Dictionary<string, int>> GetTotalsForAllUsersThisWeekAsync()
+        {
+            var now = DateTime.UtcNow;
+            int daysSinceMonday = ((int)now.DayOfWeek + 6) % 7;
+            DateTime weekStart = now.Date.AddDays(-daysSinceMonday);
+
+            var donations = await _dataStore.GetDonationsForWeekAsync(weekStart);
+
+            return donations
+                .GroupBy(d => d.DiscordUserId)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+        }
+
     }
 }

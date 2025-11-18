@@ -15,6 +15,7 @@ namespace TribeBot.Data.GoogleSheets
         private const string MembersSheet = "Members";
         private const string ReignSheet = "ReignRegistrations";
         private const string DonationsSheet = "Donations";
+        private const string FinesSheet = "Fines";
 
         public GoogleSheetsDataStore(string credentialsPath, string spreadsheetId)
         {
@@ -222,6 +223,164 @@ namespace TribeBot.Data.GoogleSheets
             }
 
             return list;
+        }
+
+        public async Task<bool> RemoveMemberByDiscordIdAsync(string discordId)
+        {
+            var members = await GetAllMembersAsync();
+            int index = members.FindIndex(m => m.DiscordUserId == discordId);
+
+            if (index == -1)
+                return false;
+
+            int row = index + 2; // Account for header
+            var deleteRequest = new Google.Apis.Sheets.v4.Data.DeleteDimensionRequest
+            {
+                Range = new Google.Apis.Sheets.v4.Data.DimensionRange
+                {
+                    SheetId = 0,            // Sheet 0 = Members
+                    Dimension = "ROWS",
+                    StartIndex = row - 1,
+                    EndIndex = row
+                }
+            };
+
+            var batch = new Google.Apis.Sheets.v4.Data.BatchUpdateSpreadsheetRequest
+            {
+                Requests = new List<Google.Apis.Sheets.v4.Data.Request>
+        {
+            new Google.Apis.Sheets.v4.Data.Request { DeleteDimension = deleteRequest }
+        }
+            };
+
+            await _sheetsService.Spreadsheets.BatchUpdate(batch, _spreadsheetId).ExecuteAsync();
+            return true;
+        }
+
+        // ------------------------------------------------------
+        // FINES
+        // ------------------------------------------------------
+
+        public async Task AddFineAsync(FineRecord fine)
+        {
+
+            var values = new List<object>
+            {
+                fine.FineId,
+                fine.DiscordUserId,
+                fine.IngameName,
+                fine.Amount,
+                fine.FineType,
+                fine.IsPaid,
+                fine.PaidAmount,
+                fine.ReignStrikes,
+                fine.Notes,
+                fine.IssuedAtUtc.ToString("O")
+            };
+
+            var append = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange { Values = new List<IList<object>> { values } },
+                _spreadsheetId,
+                $"{FinesSheet}!A:J");
+
+            append.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+            await append.ExecuteAsync();
+        }
+
+        public async Task<List<FineRecord>> GetAllFinesAsync()
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(_spreadsheetId, $"{FinesSheet}!A2:J");
+            var response = await request.ExecuteAsync();
+            var rows = response.Values;
+
+            var list = new List<FineRecord>();
+            if (rows == null) return list;
+
+            foreach ( var row in rows )
+            {
+                if (row.Count < 10 ) continue;
+
+                list.Add(new FineRecord
+                {
+                    FineId = row[0].ToString(),
+                    DiscordUserId = row[1].ToString(),
+                    IngameName = row[2].ToString(),
+                    Amount = int.TryParse(row[3]?.ToString(), out var a) ? a : 0,
+                    FineType = row[4].ToString(),
+                    IsPaid = bool.TryParse(row[5]?.ToString(), out var p) ? p : false,
+                    PaidAmount = int.TryParse(row[6]?.ToString(), out var pa) ? pa : 0,
+                    ReignStrikes = int.TryParse(row[7]?.ToString(), out var rs) ? rs : 0,
+                    Notes = row[8].ToString(),
+                    IssuedAtUtc = DateTime.TryParse(row[9]?.ToString(), out var dt) ? dt : DateTime.MinValue
+                });
+            }
+            return list;
+        }
+
+        public async Task UpdateFineAsync(FineRecord fine)
+        {
+
+            var all = await GetAllFinesAsync();
+            int index = all.FindIndex(f => f.FineId == fine.FineId);
+
+            if (index == -1)
+                return;
+
+            var values = new List<object>
+            {
+               fine.FineId,
+               fine.DiscordUserId,
+               fine.IngameName,
+               fine.Amount,
+               fine.FineType,
+               fine.IsPaid,
+               fine.PaidAmount,
+               fine.ReignStrikes,
+               fine.Notes,
+               fine.IssuedAtUtc.ToString("o")
+            };
+
+            var row = index + 2; // Account for header
+
+            var update = _sheetsService.Spreadsheets.Values.Update(
+            new ValueRange { Values = new List<IList<object>> { values } },
+            _spreadsheetId,
+            $"{FinesSheet}!A{row}:J{row}");
+
+            update.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+            await update.ExecuteAsync();
+        }
+
+        public async Task RemoveFineByIdAsync(string fineId)
+        {
+            var all = await GetAllFinesAsync();
+            int index = all.FindIndex(f => f.FineId == fineId);
+
+            if (index == -1)
+                return;
+
+            int row = index + 2;
+
+            var deleteRequest = new Google.Apis.Sheets.v4.Data.DeleteDimensionRequest
+            {
+                Range = new Google.Apis.Sheets.v4.Data.DimensionRange
+                {
+                    SheetId = 546582633,  //GID listed at top of URL bar
+                    Dimension = "ROWS",
+                    StartIndex = row - 1,
+                    EndIndex = row
+                }
+            };
+
+            var batch = new Google.Apis.Sheets.v4.Data.BatchUpdateSpreadsheetRequest
+            {
+                Requests = new List<Google.Apis.Sheets.v4.Data.Request>
+        {
+            new Google.Apis.Sheets.v4.Data.Request { DeleteDimension = deleteRequest }
+        }
+            };
+
+            await _sheetsService.Spreadsheets.BatchUpdate(batch, _spreadsheetId).ExecuteAsync();
         }
     }
 }
