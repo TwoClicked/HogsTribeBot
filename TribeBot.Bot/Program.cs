@@ -2568,118 +2568,18 @@ namespace TribeBot.Bot
             }
 
             // ============================
-            // !help — Show all commands
+            // !help — NEW INTERACTIVE HELP MENU
             // ============================
-
             if (message.Content.Equals("!help", StringComparison.OrdinalIgnoreCase))
             {
-                string helpMsg =
-                    "📘 **HOGS Tribe Bot — Command Reference**\n" +
-                    "Below is a categorized list of all available commands.\n\n" +
-
-                    "==============================\n" +
-                    "🔹 **GENERAL COMMANDS**\n" +
-                    "==============================\n" +
-                    "`!ping` — Test bot response\n" +
-                    "`/checkbot` — Check if bot is online\n\n" +
-
-                    "==============================\n" +
-                    "🟦 **REGISTRATION COMMANDS**\n" +
-                    "==============================\n" +
-                    "`!register` — Begin DM registration\n" +
-                    "`!myinfo` — View your profile\n" +
-                    "`!listmembers` — List all registered members (A–Z)\n" +
-                    "`!checkbank` — Check your weekly donation status\n\n" +
-                    "**Officer Only:**\n" +
-                    "`!registerreminder` — DM all unregistered members\n" +
-                    "`!listnonregistered` — List members missing registration\n" +
-                    "`!removemember @user` — Remove a member from sheets\n\n" +
-
-                    "==============================\n" +
-                    "✏️ **UPDATE COMMANDS (Edit Your Info)**\n" +
-                    "==============================\n" +
-                    "`!updateigname NAME` — Update in-game name\n" +
-                    "`!updateid ID` — Update in-game ID\n" +
-                    "`!updatemight NUMBER` — Update Might\n" +
-                    "`!updatekills NUMBER` — Update Kill Points\n" +
-                    "`!updatecollector LEVEL` — Update Collector Level\n" +
-                    "`!updateall` — Update all fields through DM\n\n" +
-                    "**Officer Only:**\n" +
-                    "`!viewinfo @user` — View a user's full profile\n" +
-                    "`!updateReignPoints @user POINTS` — Manually adjust a member's Reign Points\n\n" +
-
-                    "==============================\n" +
-                    "⚔️ **REIGN EVENT COMMANDS**\n" +
-                    "==============================\n" +
-                    "`!applyreign` — Apply for the Viking Reign event\n" +
-                    "`!listreign` — Show sorted Reign applicants\n\n" +
-                    "**Officer Only:**\n" +
-                    "`!clearreign` — Clear the Reign list\n" +
-                    "`!lockreign` — Lock Reign applications\n" +
-                    "`!unlockreign` — Unlock Reign applications\n\n" +
-
-                    "==============================\n" +
-                    "💰 **BANK / DONATION COMMANDS**\n" +
-                    "==============================\n" +
-                    "`!banktaxlist` — Show paid / unpaid / exempt members\n" +
-                    "`!bankunpaid` — Show unpaid members only\n" +
-                    "`!checkbank` — Check your payment progress\n" +
-                    "`!payfor <@user or name>` — Pay donation/fine for someone else\n\n" +
-                    "**Officer Only:**\n" +
-                    "`!bankreminder` — DM all unpaid members\n\n" +
-
-                    "==============================\n" +
-                    "🧾 **BANK DONATION OCR**\n" +
-                    "==============================\n" +
-                    "• Upload donation screenshots in <#1440050111353721053>\n" +
-                    "• Bot auto-reads screenshots via OCR\n" +
-                    "• Multi-image uploads supported\n\n" +
-
-                    "==============================\n" +
-                    "💀 **FINE SYSTEM COMMANDS**\n" +
-                    "==============================\n" +
-                    "`!myfines` — View all your fines and total owed\n" +
-                    "`!payfor <@user or name>` — Pay someone else's fines\n\n" +
-                    "**Officer Only:**\n" +
-                    "`!fineuser @user amount reason` — Issue an event fine\n" +
-                    "`!finereign @user amount reason` — Issue a Reign fine (+2 strikes)\n" +
-                    "`!finelist` — Show all unpaid and paid fines\n" +
-                    "`!removefine FINEID` — Remove a fine after verification\n\n" +
-
-                    "==============================\n" +
-                    "📊 **POLL SYSTEM COMMANDS**\n" +
-                    "==============================\n" +
-                    "**User Commands:**\n" +
-                    "`!pollshow <pollId>` — Show anonymous poll results\n" +
-                    "`!polllist` — List all active and ended polls\n" +
-                    "`!vote <number>` — Vote in an active poll (DM ONLY)\n\n" +
-
-                    "**Officer Only:**\n" +
-                    "`!pollcreate \"question\" YYYY-MM-DD \"option1\" \"option2\" ...` — Create a poll\n" +
-                    "`!pollremove <pollId>` — Delete a poll and all votes\n" +
-                    "`!pollofficer <pollId>` — Show poll results\n\n" +
-
-                    "==============================\n" +
-                    "🎥 **CONTENT CREATOR COMMANDS**\n" +
-                    "==============================\n" +
-                    "`!promote <YouTubeLink>` — Post your newest video to the promotion channel (DM ONLY)\n\n" +
-
-                    "==============================\n" +
-                    "🐗 **NOTES**\n" +
-                    "==============================\n" +
-                    "• All OCR uploads must be clear and readable\n" +
-                    "• Expired polls stop accepting votes automatically\n" +
-                    "• Use `!pollofficer` to view detailed results\n\n" +
-
-                    "==============================\n" +
-                    "🐗 **NEED HELP?**\n" +
-                    "==============================\n" +
-                    "Contact an officer if something looks wrong.\n";
-
-
-                await SendLongMessageAsync(message.Channel, helpMsg);
+                await message.Channel.SendMessageAsync(
+                    embed: HelpEmbeds.General(),
+                    components: HelpComponents.Build("general").Build()
+                );
                 return;
             }
+
+
 
             #endregion
         }
@@ -2973,6 +2873,59 @@ namespace TribeBot.Bot
 
                 return; // IMPORTANT — only leave for slash commands
             }
+
+            // ======= HELP MENU INTERACTIONS =======
+            if (interaction is SocketMessageComponent component)
+            {
+                string id = component.Data.CustomId;
+
+                string current = id switch
+                {
+                    "general_btn" => "general",
+                    "registration_btn" => "registration",
+                    "bank_btn" => "bank",
+                    "fines_btn" => "fines",
+                    _ => component.Data.Values?.FirstOrDefault() ?? "general"
+                };
+
+                string[] order = { "general", "registration", "update", "reign", "bank", "fines", "polls", "creator" };
+                int idx = Array.IndexOf(order, current);
+
+                string target = current;
+
+                if (id == "helpMenu")
+                    target = component.Data.Values.First();
+
+                if (id == "help_prev")
+                    target = order[(idx - 1 + order.Length) % order.Length];
+
+                if (id == "help_next")
+                    target = order[(idx + 1) % order.Length];
+
+                if (id.EndsWith("_btn"))
+                    target = id.Replace("_btn", "");
+
+                Embed embed = target switch
+                {
+                    "general" => HelpEmbeds.General(),
+                    "registration" => HelpEmbeds.Registration(),
+                    "update" => HelpEmbeds.Update(),
+                    "reign" => HelpEmbeds.Reign(),
+                    "bank" => HelpEmbeds.Bank(),
+                    "fines" => HelpEmbeds.Fines(),
+                    "polls" => HelpEmbeds.Polls(),
+                    "creator" => HelpEmbeds.Creator(),
+                    _ => HelpEmbeds.General()
+                };
+
+                await component.UpdateAsync(msg =>
+                {
+                    msg.Embed = embed;
+                    msg.Components = HelpComponents.Build(target).Build();
+                });
+
+                return;
+            }
         }
 
         // ======================================================
@@ -3006,5 +2959,105 @@ namespace TribeBot.Bot
         }
 
     }
+
+    public static class HelpComponents
+    {
+        public static ComponentBuilder Build(string selected)
+        {
+            var builder = new ComponentBuilder();
+
+            var menu = new SelectMenuBuilder()
+                .WithCustomId("helpMenu")
+                .WithPlaceholder("Choose category...")
+                .AddOption("General", "general", isDefault: selected == "general")
+                .AddOption("Registration", "registration", isDefault: selected == "registration")
+                .AddOption("Update", "update", isDefault: selected == "update")
+                .AddOption("Reign Event", "reign", isDefault: selected == "reign")
+                .AddOption("Bank", "bank", isDefault: selected == "bank")
+                .AddOption("Fines", "fines", isDefault: selected == "fines")
+                .AddOption("Polls", "polls", isDefault: selected == "polls")
+                .AddOption("Content Creator", "creator", isDefault: selected == "creator");
+
+            builder.WithSelectMenu(menu);
+
+            builder.WithButton("General", "general_btn", ButtonStyle.Primary);
+            builder.WithButton("Registration", "registration_btn", ButtonStyle.Primary);
+            builder.WithButton("Bank", "bank_btn", ButtonStyle.Success);
+            builder.WithButton("Fines", "fines_btn", ButtonStyle.Danger);
+
+            return builder;
+        }
+    }
+
+
+    public static class HelpEmbeds
+    {
+        public static Embed General() => new EmbedBuilder()
+            .WithTitle("📘 General Commands")
+            .AddField("/checkbot", "Check if bot is online")
+            .AddField("!myinfo", "View your profile")
+            .AddField("!listmembers", "List all members")
+            .AddField("Officer Only", "`!viewinfo @user`,")
+            .WithColor(Color.Blue)
+            .Build();
+
+        public static Embed Registration() => new EmbedBuilder()
+            .WithTitle("🟦 Registration Commands")
+            .AddField("!register", "Begin DM registration")
+            .AddField("Officer Only", "`!registerreminder`, `!listnonregistered`, `!removemember @user`")
+            .WithColor(Color.Blue)
+            .Build();
+
+        public static Embed Update() => new EmbedBuilder()
+            .WithTitle("✏️ Update Commands (Place the value behind the command!)")
+            .AddField("!updateigname", "Update in-game name")
+            .AddField("!updateid", "Update in-game ID")
+            .AddField("!updatemight", "Update Might")
+            .AddField("!updatekills", "Update kill points")
+            .AddField("!updatecollector", "Update collector level")
+            .AddField("!updateall", "Update all fields again")
+            .AddField("Officer Only", "`!viewinfo @user`, `!updateReignPoints @user points`")
+            .WithColor(Color.Gold)
+            .Build();
+
+        public static Embed Reign() => new EmbedBuilder()
+            .WithTitle("⚔️ Reign Event Commands")
+            .AddField("!applyreign", "Apply for Viking Reign")
+            .AddField("!listreign", "Show sorted applicants")
+            .AddField("Officer Only", "`!clearreign`, `!lockreign`, `!unlockreign`, `!updatereignpoints`")
+            .WithColor(Color.DarkRed)
+            .Build();
+
+        public static Embed Bank() => new EmbedBuilder()
+            .WithTitle("💰 Bank / Donation Commands")
+            .AddField("!banktaxlist", "Show paid/unpaid members")
+            .AddField("!bankunpaid", "Show unpaid members only")
+            .AddField("!checkbank", "Check your donation progress")
+            .AddField("!payfor", "Pay for someone else")
+            .AddField("Officer Only", "`!bankreminder` `!exempt`, `!unexempt` `!bankreminder`")
+            .WithColor(Color.Green)
+            .Build();
+
+        public static Embed Fines() => new EmbedBuilder()
+            .WithTitle("💀 Fine System Commands")
+            .AddField("!myfines", "View your fines")
+            .AddField("Officer Only", "`!fineuser`, `!finereign`, `!finelist`, `!removefine`")
+            .WithColor(Color.DarkGrey)
+            .Build();
+
+        public static Embed Polls() => new EmbedBuilder()
+            .WithTitle("📊 Poll Commands")
+            .AddField("User:", "`!polllist`, `!pollshow`, `!vote`")
+            .AddField("Officer:", "`!pollcreate`, `!pollremove`, `!pollofficer`")
+            .WithColor(Color.Purple)
+            .Build();
+
+        public static Embed Creator() => new EmbedBuilder()
+            .WithTitle("🎥 Content Creator")
+            .AddField("!promote", "Send your YouTube video to the promo channel")
+            .WithColor(Color.Magenta)
+            .Build();
+    }
+
 }
 #endregion
