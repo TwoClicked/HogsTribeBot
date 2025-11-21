@@ -1,15 +1,16 @@
 ﻿using Discord;
 using Discord.WebSocket;
+using Google.Apis.Drive.v3.Data;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using TribeBot.Core.Entities;
 using TribeBot.Data.GoogleSheets;
 using TribeBot.Data.Interfaces;
-using TribeBot.Services.Services;
 using TribeBot.Services.Interfaces;
-using TribeBot.Core.Entities;
+using TribeBot.Services.Services;
 
 namespace TribeBot.Bot
 {
@@ -81,6 +82,7 @@ namespace TribeBot.Bot
             services.AddSingleton<IReignService, ReignService>();
             services.AddSingleton<IDonationService, DonationService>();
             services.AddSingleton<IFineService, FineService>();
+            services.AddSingleton<IVoteService, VoteService>();
 
             // Discord client
             services.AddSingleton(_client);
@@ -111,24 +113,8 @@ namespace TribeBot.Bot
                 Console.WriteLine("Error registering GLOBAL slash command: " + ex.Message);
             }
 
-            // GUILD slash command (instant update)
-            var guild = _client.GetGuild(1109193500664287336); // HOGS guild
-
-            try
-            {
-                var guildCommand = new SlashCommandBuilder()
-                    .WithName("checkbot")
-                    .WithDescription("Checks if the bot is online.");
-
-                await guild.CreateApplicationCommandAsync(guildCommand.Build());
-                Console.WriteLine("GUILD slash command '/checkbot' registered.");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Error registering GUILD slash command: " + ex.Message);
-            }
-
             StartRegistrationReminderLoop();
+
         }
         private void StartRegistrationReminderLoop()
         {
@@ -144,7 +130,30 @@ namespace TribeBot.Bot
                             _lastReminderDate.Date != now.Date)
                         {
                             _lastReminderDate = now.Date;
-                            await SendRegistrationRemindersAsync();
+
+                            // NEW: Get stats from reminder execution
+                            var summary = await SendRegistrationRemindersAsync();
+
+                            // Log to officer log channel
+                            ulong officerLogChannelId = 1440209811621937273;
+                            var logChannel = _client.GetChannel(officerLogChannelId) as IMessageChannel;
+
+                            if (logChannel != null)
+                            {
+                                await logChannel.SendMessageAsync(
+                                    $"📣 **Daily Registration Reminder Sent**\n" +
+                                    $"🕒 `{DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC`\n\n" +
+                                    $"• Total HOGS members: **{summary.TotalMembers}**\n" +
+                                    $"• Registered: **{summary.RegisteredMembers}**\n" +
+                                    $"• Not registered: **{summary.UnregisteredMembers}**\n" +
+                                    $"• DMs sent successfully: **{summary.DMsSent}**\n" +
+                                    $"• DM failures: **{summary.DMFailures.Count}**\n\n" +
+                                    (summary.DMFailures.Count > 0
+                                        ? "⚠️ **Could not DM:**\n" +
+                                          string.Join("\n", summary.DMFailures.Select(id => $"• <@{id}>"))
+                                        : "✅ All unregistered members were DM'd successfully.")
+                                );
+                            }
                         }
                     }
                     catch (Exception ex)
@@ -157,36 +166,47 @@ namespace TribeBot.Bot
             });
         }
 
-        private async Task SendRegistrationRemindersAsync()
+
+        private async Task<ReminderSummary> SendRegistrationRemindersAsync()
         {
+            var summary = new ReminderSummary();
+
             try
             {
                 var guild = _client.GetGuild(1109193500664287336);
 
-                // TEST ROLE → replace with live HOGS when ready
-                var hogsRole = guild.GetRole(1439972286877794314);
-
+                var hogsRole = guild.GetRole(1222668156271591485);
                 if (hogsRole == null)
                 {
-                    Console.WriteLine("Hogs role not found");
-                    return;
+                    Console.WriteLine("HOGS role not found.");
+                    return summary;
                 }
+
+                summary.TotalMembers = hogsRole.Members.Count();
 
                 var memberService = _services.GetService<IMemberService>();
                 var registered = await memberService.GetAllMembersAsync();
                 var registeredIds = registered.Select(m => m.DiscordUserId).ToHashSet();
 
+                summary.RegisteredMembers = registeredIds.Count;
+
                 var unregistered = hogsRole.Members
                     .Where(u => !registeredIds.Contains(u.Id.ToString()))
                     .ToList();
 
+                summary.UnregisteredMembers = unregistered.Count;
+
                 if (unregistered.Count == 0)
                 {
                     Console.WriteLine("All hogs have been registered.");
-                    return;
+                    return summary;
                 }
 
                 Console.WriteLine($"Sending DM reminders to {unregistered.Count} users...");
+
+                // Officer log channel
+                ulong officerLogChannelId = 1440209811621937273;
+                var officerLog = _client.GetChannel(officerLogChannelId) as IMessageChannel;
 
                 foreach (var user in unregistered)
                 {
@@ -194,13 +214,29 @@ namespace TribeBot.Bot
                     {
                         var dm = await user.CreateDMChannelAsync();
                         await dm.SendMessageAsync(
-                            $"Hello {user.Username}! 👋\n\n" +
-                            "**You still need to register with the Tribe Bot.**\n\n" +
-                            "Please send `!register` here in DM to begin.");
+                            $"👋 Hello **{user.Username}**, you still need to register with the Tribe Bot.\n" +
+                            $"Please type `!register` here in DM.\n\n" +
+                            $"Registration is required to participate in tribe events.");
+
+                        summary.DMsSent++;
+
+                        // IMPORTANT: prevent heartbeat blocking
+                        await Task.Yield();
+                        await Task.Delay(1200);
                     }
                     catch
                     {
-                        Console.WriteLine($"Could not DM {user.Username}");
+                        summary.DMFailures.Add(user.Id);
+
+                        if (officerLog != null)
+                        {
+                            await officerLog.SendMessageAsync(
+                                $"⚠️ Could not DM <@{user.Id}> — Their DMs may be closed.");
+                        }
+
+                        // Prevent gateway thread starvation
+                        await Task.Yield();
+                        await Task.Delay(2000);
                     }
                 }
             }
@@ -208,7 +244,12 @@ namespace TribeBot.Bot
             {
                 Console.WriteLine($"Reminder job failed: {ex.Message}");
             }
+
+            return summary;
         }
+
+
+
         private async Task MessageReceivedAsync(SocketMessage message)
         {
             if (message.Author.IsBot) return;
@@ -852,9 +893,9 @@ namespace TribeBot.Bot
 
             if (message.Content.Equals("!registerreminder", StringComparison.OrdinalIgnoreCase))
             {
-                if (message.Channel is not SocketGuildChannel regChan)
+                if (message.Channel is not SocketGuildChannel)
                 {
-                    await message.Channel.SendMessageAsync("This command can only be used inside the server.");
+                    await message.Channel.SendMessageAsync("This command can only be used in the server.");
                     return;
                 }
 
@@ -863,62 +904,24 @@ namespace TribeBot.Bot
 
                 if (!caller.Roles.Any(r => r.Id == officerRoleId))
                 {
-                    await message.Channel.SendMessageAsync($"{caller.Mention} you do not have permission to use this command.");
+                    await message.Channel.SendMessageAsync($"{caller.Mention} you do not have permission.");
                     return;
                 }
 
-                var guild = regChan.Guild;
-                var memberService = _services.GetService<IMemberService>();
+                await message.Channel.SendMessageAsync("📨 Sending reminders in the background…");
 
-                var registered = await memberService.GetAllMembersAsync();
-                var registeredIds = registered.Select(m => m.DiscordUserId).ToHashSet();
-
-                ulong hogsRoleId = 1222668156271591485; // LIVE ROLE
-                var hogsRole = guild.GetRole(hogsRoleId);
-
-                var nonRegistered = hogsRole.Members
-                    .Where(u => !registeredIds.Contains(u.Id.ToString()))
-                    .ToList();
-
-                if (nonRegistered.Count == 0)
+                // Run the reminder OUTSIDE the gateway event
+                _ = Task.Run(async () =>
                 {
-                    await message.Channel.SendMessageAsync("🎉 All HOGS members are registered!");
-                    return;
-                }
+                    await SendRegistrationReminderManualAsync(message.Channel);
+                });
 
-                int sent = 0;
-                List<string> failed = new();
-
-                foreach (var user in nonRegistered)
-                {
-                    try
-                    {
-                        var dm = await user.CreateDMChannelAsync();
-                        await dm.SendMessageAsync(
-                            $"👋 Hello **{user.Username}**, you still need to register with the Tribe Bot.\n" +
-                            $"Please type `!register` here in DM.\n\n" +
-                            $"Registration is required to participate in tribe events.");
-                        sent++;
-                    }
-                    catch
-                    {
-                        failed.Add($"<@{user.Id}>");
-                    }
-                }
-
-                string result =
-                    $"📨 Registration reminders sent: **{sent}**";
-
-                if (failed.Count > 0)
-                {
-                    result += "\n⚠ Could not DM:\n";
-                    foreach (var f in failed)
-                        result += f + "\n";
-                }
-
-                await message.Channel.SendMessageAsync(result);
                 return;
             }
+
+
+
+
 
             // ============================
             // !listnonregistered
@@ -1265,65 +1268,290 @@ namespace TribeBot.Bot
                     return;
                 }
 
-                var guild = brChan.Guild;
-                var memberService = _services.GetService<IMemberService>();
-                var donationService = _services.GetService<IDonationService>();
+                await message.Channel.SendMessageAsync("🏦 Sending bank reminders in the background…");
 
-                var members = await memberService.GetAllMembersAsync();
-                var totals = await donationService.GetTotalsForAllUsersThisWeekAsync();
-
-                int goal = 44_000_000;
-
-                var unpaid = members
-                    .Where(m => !m.IsExempt &&
-                                (!totals.ContainsKey(m.DiscordUserId) ||
-                                 totals[m.DiscordUserId] < goal))
-                    .ToList();
-
-                if (unpaid.Count == 0)
+                _ = Task.Run(async () =>
                 {
-                    await message.Channel.SendMessageAsync("🎉 Everyone has paid (or is exempt)!");
+                    await SendBankReminderManualAsync(brChan);
+                });
+
+                return;
+            }
+
+
+            #endregion
+
+            #region POLL VOTING SYSTEM
+
+            // ============================
+            // !pollcreate "question" YYYY-MM-DD option1 option2 option3...
+            // ============================
+
+            if (message.Content.StartsWith("!pollcreate", StringComparison.OrdinalIgnoreCase))
+            {
+                if (message.Channel is not SocketGuildChannel)
+                {
+                    await message.Channel.SendMessageAsync("Use this command inside the server.");
                     return;
                 }
 
-                int sent = 0;
-                List<string> failed = new();
+                var caller = message.Author as SocketGuildUser;
+                ulong officerRoleId = 1222665812775534592;
 
-                foreach (var m in unpaid)
+                if (!caller.Roles.Any(r => r.Id == officerRoleId))
                 {
-                    var user = guild.GetUser(ulong.Parse(m.DiscordUserId));
-                    if (user == null)
+                    await message.Channel.SendMessageAsync("You do not have permission, Ofcicers only.");
+                    return;
+                }
+                // Parse: !pollcreate "Question here" 2025-01-05 option1 option2 option3
+                var split = message.Content.Split('"');
+                if (split.Length < 3)
+                {
+                    await message.Channel.SendMessageAsync("Usage: !pollcreate \"Question\" YYYY-MM-DD Option1 Option2 ...");
+                    return;
+                }
+
+                string question = split[1].Trim();
+
+                // After closing quote: → YYYY-MM-DD option1 option2
+                string remainder = split[2].Trim();
+                var parts = remainder.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+                if (parts.Length < 2)
+                {
+                    await message.Channel.SendMessageAsync("Usage: !pollcreate \"Question\" YYYY-MM-DD Option1 Option2 ...");
+                    return;
+                }
+
+                // Parse end date
+                if (!DateTime.TryParse(parts[0], out DateTime endDate))
+                {
+                    await message.Channel.SendMessageAsync("Invalid date. Use format YYYY-MM-DD");
+                    return;
+                }
+
+                var options = parts.Skip(1).ToList();
+                if (options.Count < 2)
+                {
+                    await message.Channel.SendMessageAsync("You must provide at least two options.");
+                    return;
+                }
+
+                string pollId = Guid.NewGuid().ToString("N").Substring(0, 8);
+
+                var voteService = _services.GetService<IVoteService>();
+
+                var poll = new PollRecord
+                {
+                    PollId = pollId,
+                    Question = question,
+                    EndDateUtc = endDate.ToUniversalTime(),
+                    Options = options,
+                    CreatedByDiscordId = message.Author.Id.ToString(),
+                    CreatedAtUtc = DateTime.UtcNow
+                };
+
+                await voteService.CreatePollAsync(poll);
+
+                await message.Channel.SendMessageAsync(
+                    $"📊 **Poll Created!**\n" +
+                    $"Poll ID: `{pollId}`\n" +
+                    $"Question: **{question}**\n" +
+                    $"Ends: `{endDate:yyyy-MM-dd}`\n" +
+                    $"DMs sending in the background…");
+
+                // Send DMs in the background
+                _ = Task.Run(async () =>
+                {
+                    await SendPollDMsAsync(poll);
+                });
+
+                return;
+            }
+
+            // ============================
+            // !polllist
+            // ============================
+
+            if (message.Content.Equals("!polllist", StringComparison.OrdinalIgnoreCase))
+            {
+                var voteService = _services.GetService<IVoteService>();
+                var polls = await voteService.GetAllPollsAsync();
+
+
+                if (polls.Count == 0)
+                {
+                    await message.Channel.SendMessageAsync("No polls exist.");
+                    return;
+                }
+
+                string output = "📋 **Poll List**\n\n";
+
+                foreach (var poll in polls.OrderBy(p => p.EndDateUtc))
+                {
+                    string status = poll.EndDateUtc < DateTime.UtcNow
+                           ? "❌ ENDED"
+                           : "🟢 ACTIVE";
+
+
+                    output +=
+                        $"• ID: `{poll.PollId}` — {status}\n" +
+                        $"   Q: {poll.Question}\n" +
+                        $"   Ends: {poll.EndDateUtc:yyyy-MM-dd}\n\n";
+                }
+                await SendLongMessageAsync(message.Channel, output);
+                return;
+            }
+
+            // ============================
+            // !pollremove <pollId>
+            // ============================
+
+            if (message.Content.StartsWith("!pollremove", StringComparison.OrdinalIgnoreCase))
+            {
+                if (message.Channel is not SocketGuildChannel)
+                {
+                    await message.Channel.SendMessageAsync("Use this inside the server.");
+                    return;
+                }
+
+                var caller = message.Author as SocketGuildUser;
+                ulong officerRoleId = 1222665812775534592;
+
+                if (!caller.Roles.Any(r => r.Id == officerRoleId))
+                {
+                    await message.Channel.SendMessageAsync("You do not have permission.");
+                    return;
+                }
+
+                var parts = message.Content.Split(" ", 2);
+                if (parts.Length < 2)
+                {
+                    await message.Channel.SendMessageAsync("Usage: !pollremove <pollId>");
+                    return;
+                }
+
+                string pollId = parts[1].Trim();
+
+                var voteService = _services.GetService<IVoteService>();
+                await voteService.RemovePollAsync(pollId);
+
+                await message.Channel.SendMessageAsync($"🗑️ Removed poll `{pollId}`.");
+                return;
+            }
+
+            // ============================
+            // !pollshow <pollId>
+            // ============================
+
+            if (message.Content.StartsWith("!pollshow", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = message.Content.Split(" ", 2);
+
+                if (parts.Length < 2)
+                {
+                    await message.Channel.SendMessageAsync("Usage: !pollshow <pollId>");
+                    return;
+                }
+
+                string pollId = parts[1].Trim();
+
+                var voteService = _services.GetService<IVoteService>();
+                var poll = await voteService.GetPollAsync(pollId);
+
+                if (poll == null)
+                {
+                    await message.Channel.SendMessageAsync("Poll not found.");
+                    return;
+                }
+
+                var results = await voteService.GetAnonymousResultsAsync(pollId);
+
+                string output =
+                    $"📊 **Poll: {poll.Question}**\n" +
+                    $"(Ends: {poll.EndDateUtc:yyyy-MM-dd})\n\n";
+
+                foreach (var op in poll.Options)
+                {
+                    int count = results.ContainsKey(op) ? results[op] : 0;
+                    output += $"• **{op}** — {count} votes\n";
+                }
+
+                int total = results.Values.Sum();
+                output += $"\nTotal votes: **{total}**";
+
+                await SendLongMessageAsync(message.Channel, output);
+                return;
+            }
+
+            // ============================
+            // !pollofficer <pollId>
+            // ============================
+
+            if (message.Content.StartsWith("!pollofficer", StringComparison.OrdinalIgnoreCase))
+            {
+                if (message.Channel is not SocketGuildChannel)
+                {
+                    await message.Channel.SendMessageAsync("Use this inside the server.");
+                    return;
+                }
+
+                var caller = message.Author as SocketGuildUser;
+                ulong officerRoleId = 1222665812775534592;
+
+                if (!caller.Roles.Any(r => r.Id == officerRoleId))
+                {
+                    await message.Channel.SendMessageAsync("You do not have permission.");
+                    return;
+                }
+
+                var parts = message.Content.Split(" ", 2);
+                if (parts.Length < 2)
+                {
+                    await message.Channel.SendMessageAsync("Usage: !pollofficer <pollId>");
+                    return;
+                }
+
+                string pollId = parts[1].Trim();
+
+                var voteService = _services.GetService<IVoteService>();
+                var poll = await voteService.GetPollAsync(pollId);
+
+                if (poll == null)
+                {
+                    await message.Channel.SendMessageAsync("Poll not found.");
+                    return;
+                }
+
+                var results = await voteService.GetOfficerResultsAsync(pollId);
+
+                string output =
+                    $"📊 **Poll (Officer View): {poll.Question}**\n" +
+                    $"Ends: {poll.EndDateUtc:yyyy-MM-dd}\n\n";
+
+                foreach (var option in poll.Options)
+                {
+                    output += $"**{option}:**\n";
+
+                    if (!results.ContainsKey(option) || results[option].Count == 0)
                     {
-                        failed.Add($"<@{m.DiscordUserId}>");
+                        output += "• No votes\n\n";
                         continue;
                     }
 
-                    try
-                    {
-                        var dm = await user.CreateDMChannelAsync();
-                        await dm.SendMessageAsync(
-                            $"🏦 Hello **{m.IngameName}**, this is your weekly donation reminder.\n" +
-                            $"You still need to pay **44,000,000**.\n" +
-                            $"Please upload your screenshot in <#1440050111353721053>.");
-                        sent++;
-                    }
-                    catch
-                    {
-                        failed.Add($"<@{m.DiscordUserId}>");
-                    }
+                    foreach (var v in results[option])
+                        output += $"• {v.IngameName} (<@{v.DiscordUserId}>)\n";
+
+                    output += "\n";
                 }
 
-                string result = $"📩 Reminder sent to **{sent}** unpaid members.";
-
-                if (failed.Count > 0)
-                {
-                    result += "\n⚠ Could not DM:\n";
-                    foreach (var f in failed) result += f + "\n";
-                }
-
-                await message.Channel.SendMessageAsync(result);
+                await SendLongMessageAsync(message.Channel, output);
                 return;
             }
+
+
+
+
 
             #endregion
 
@@ -1435,6 +1663,20 @@ namespace TribeBot.Bot
             // ============================
             if (message.Content.StartsWith("!payfor", StringComparison.OrdinalIgnoreCase))
             {
+
+                ulong bankChannel = 1440050111353721053;
+                ulong fineChannel = 1440431172160061450;
+
+                // Restrict command being used outside of the two channels needed
+                if (message.Channel.Id != bankChannel && message.Channel.Id != fineChannel)
+                {
+                    await message.Channel.SendMessageAsync(
+                        "❌ You can only use `!payfor` in the **bank donation channel** or the **fine payment channel**."
+                    );
+                    return;
+                }
+
+
                 var memberService = _services.GetService<IMemberService>();
 
                 string args = message.Content.Substring("!payfor".Length).Trim();
@@ -1858,11 +2100,11 @@ namespace TribeBot.Bot
                     using (var client = new HttpClient())
                     {
                         var data = await client.GetByteArrayAsync(att.Url);
-                        await File.WriteAllBytesAsync(tmp, data);
+                        await System.IO.File.WriteAllBytesAsync(tmp, data);
                     }
 
                     int? amount = await ocrService.ExtractDonationAmountAsync(tmp);
-                    File.Delete(tmp);
+                    System.IO.File.Delete(tmp);
 
                     if (amount != null)
                         totalAmount += amount.Value;
@@ -2072,7 +2314,7 @@ namespace TribeBot.Bot
                     "`!updatemight NUMBER` — Update Might\n" +
                     "`!updatekills NUMBER` — Update Kill Points\n" +
                     "`!updatecollector LEVEL` — Update Collector Level\n" +
-                    "`!updateall` — Update your whole profile through DM\n\n" +
+                    "`!updateall` — Update all fields through DM\n\n" +
                     "**Officer Only:**\n" +
                     "`!viewinfo @user` — View a user's full profile\n\n" +
 
@@ -2092,7 +2334,7 @@ namespace TribeBot.Bot
                     "`!banktaxlist` — Show paid / unpaid / exempt members\n" +
                     "`!bankunpaid` — Show unpaid members only\n" +
                     "`!checkbank` — Check your payment progress\n" +
-                    "`!payfor <@user or name>` — Pay bank donation for someone else\n\n" +
+                    "`!payfor <@user or name>` — Pay donation/fine for someone else\n\n" +
                     "**Officer Only:**\n" +
                     "`!bankreminder` — DM all unpaid members\n\n" +
 
@@ -2106,8 +2348,8 @@ namespace TribeBot.Bot
                     "==============================\n" +
                     "💀 **FINE SYSTEM COMMANDS**\n" +
                     "==============================\n" +
-                    "`!myfines` — View all your fines and amounts owed\n" +
-                    "`!payfor <@user or name>` — Pay someone else's fines\n" +
+                    "`!myfines` — View all your fines and total owed\n" +
+                    "`!payfor <@user or name>` — Pay someone else's fines\n\n" +
                     "**Officer Only:**\n" +
                     "`!fineuser @user amount reason` — Issue an event fine\n" +
                     "`!finereign @user amount reason` — Issue a Reign fine (+2 strikes)\n" +
@@ -2115,22 +2357,270 @@ namespace TribeBot.Bot
                     "`!removefine FINEID` — Remove a fine after verification\n\n" +
 
                     "==============================\n" +
+                    "📊 **POLL SYSTEM COMMANDS**\n" +
+                    "==============================\n" +
+                    "**User Commands:**\n" +
+                    "`!pollshow <pollId>` — Show anonymous poll results\n" +
+                    "`!polllist` — List all active and ended polls\n\n" +
+
+                    "**Officer Only:**\n" +
+                    "`!pollcreate \"question\" YYYY-MM-DD option1 option2 ...` — Create a poll\n" +
+                    "`!pollremove <pollId>` — Delete a poll and all votes\n" +
+                    "`!pollofficer <pollId>` — Show detailed poll results (who voted what)\n\n" +
+
+                    "==============================\n" +
                     "🐗 **NOTES**\n" +
                     "==============================\n" +
-                    "• All OCR-based uploads must be clear and readable\n\n" +
+                    "• All OCR uploads must be clear and readable\n" +
+                    "• Expired polls stop accepting votes automatically\n" +
+                    "• Use `!pollofficer`\n\n" +
 
                     "==============================\n" +
                     "🐗 **NEED HELP?**\n" +
                     "==============================\n" +
-                    "Contact an officer if something doesn't look right.\n";
+                    "Contact an officer if something looks wrong.\n";
 
                 await SendLongMessageAsync(message.Channel, helpMsg);
                 return;
             }
 
 
+
             #endregion
         }
+
+
+        //POLL DM SYSTEM
+        private async Task SendPollDMsAsync(PollRecord poll)
+        {
+            try
+            {
+                var guild = _client.GetGuild(1109193500664287336);
+                var memberService = _services.GetService<IMemberService>();
+
+                var members = await memberService.GetAllMembersAsync();
+                var ids = members.Select(m => ulong.Parse(m.DiscordUserId)).ToList();
+
+                // var role = guild.GetRole(1222668156271591485); // HOGS role
+                var role = guild.GetRole(1439972286877794314);
+                var targets = role.Members.Where(m => ids.Contains(m.Id)).ToList();
+
+                foreach (var user in targets)
+                {
+                    try
+                    {
+                        var dm = await user.CreateDMChannelAsync();
+
+                        var builder = new ComponentBuilder();
+                        foreach (var opt in poll.Options)
+                            builder.WithButton(opt, customId: $"poll:{poll.PollId}:{opt}", style: ButtonStyle.Primary);
+
+                        await dm.SendMessageAsync(
+                            $"📊 **New Poll:**\n{poll.Question}\n\nEnds: `{poll.EndDateUtc:yyyy-MM-dd}`",
+                            components: builder.Build());
+
+                        await Task.Yield();
+                        await Task.Delay(1200);
+                    }
+                    catch
+                    {
+                        // Log failure to officer channel
+                        var logChannel = _client.GetChannel(1440209811621937273) as IMessageChannel;
+                        if (logChannel != null)
+                            await logChannel.SendMessageAsync($"⚠️ Could not DM <@{user.Id}> for poll `{poll.PollId}`.");
+
+                        await Task.Yield();
+                        await Task.Delay(2000);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Poll DM error: {ex.Message}");
+            }
+        }
+
+
+        private async Task SendBankReminderManualAsync(SocketGuildChannel originChannel)
+        {
+            try
+            {
+                // Convert channel to IMessageChannel for sending text
+                var responseChannel = (IMessageChannel)originChannel;
+
+                var guild = originChannel.Guild;
+                var memberService = _services.GetService<IMemberService>();
+                var donationService = _services.GetService<IDonationService>();
+
+                var members = await memberService.GetAllMembersAsync();
+                var totals = await donationService.GetTotalsForAllUsersThisWeekAsync();
+
+                int goal = 44_000_000;
+
+                var unpaid = members
+                    .Where(m => !m.IsExempt &&
+                                (!totals.ContainsKey(m.DiscordUserId) ||
+                                 totals[m.DiscordUserId] < goal))
+                    .ToList();
+
+                if (unpaid.Count == 0)
+                {
+                    await responseChannel.SendMessageAsync("🎉 Everyone has paid (or is exempt)!");
+                    return;
+                }
+
+                int sent = 0;
+                List<ulong> failed = new();
+
+                // Officer log channel
+                ulong officerLogChannelId = 1440209811621937273;
+                var officerLog = _client.GetChannel(officerLogChannelId) as IMessageChannel;
+
+                foreach (var m in unpaid)
+                {
+                    ulong uid = ulong.Parse(m.DiscordUserId);
+                    var user = guild.GetUser(uid);
+
+                    if (user == null)
+                    {
+                        failed.Add(uid);
+                        continue;
+                    }
+
+                    try
+                    {
+                        var dm = await user.CreateDMChannelAsync();
+                        await dm.SendMessageAsync(
+                            $"🏦 Hello **{m.IngameName}**, this is your weekly donation reminder.\n" +
+                            $"You still need to pay **44,000,000**.\n" +
+                            $"Please upload your screenshot in <#1440050111353721053>."
+                        );
+
+                        sent++;
+                        await Task.Delay(1200); // rate-limit safe
+                    }
+                    catch
+                    {
+                        failed.Add(uid);
+
+                        if (officerLog != null)
+                        {
+                            await officerLog.SendMessageAsync(
+                                $"⚠️ Could not DM <@{uid}> — DMs closed or message failed.");
+                        }
+
+                        await Task.Delay(2000);
+                    }
+                }
+
+                // Final summary
+                string result =
+                    $"📩 **Bank Reminder Summary**\n\n" +
+                    $"• Players unpaid: **{unpaid.Count}**\n" +
+                    $"• DMs sent successfully: **{sent}**\n" +
+                    $"• Failed DMs: **{failed.Count}**";
+
+                if (failed.Count > 0)
+                {
+                    result += "\n\n⚠️ **Could not DM:**\n" +
+                              string.Join("\n", failed.Select(id => $"• <@{id}>"));
+                }
+
+                await responseChannel.SendMessageAsync(result);
+            }
+            catch (Exception ex)
+            {
+                var responseChannel = (IMessageChannel)originChannel;
+                await responseChannel.SendMessageAsync($"❌ Error sending bank reminders: {ex.Message}");
+            }
+        }
+
+
+
+        //Manual sender for registration
+        private async Task SendRegistrationReminderManualAsync(IMessageChannel originChannel)
+        {
+            try
+            {
+                var guild = _client.GetGuild(1109193500664287336);
+
+                ulong hogsRoleId = 1222668156271591485; // LIVE ROLE
+                var hogsRole = guild.GetRole(hogsRoleId);
+
+                if (hogsRole == null)
+                {
+                    await originChannel.SendMessageAsync("❌ HOGS role not found.");
+                    return;
+                }
+
+                var memberService = _services.GetService<IMemberService>();
+                var registered = await memberService.GetAllMembersAsync();
+                var registeredIds = registered.Select(m => m.DiscordUserId).ToHashSet();
+
+                var unregistered = hogsRole.Members
+                    .Where(u => !registeredIds.Contains(u.Id.ToString()))
+                    .ToList();
+
+                if (unregistered.Count == 0)
+                {
+                    await originChannel.SendMessageAsync("🎉 All HOGS members are already registered!");
+                    return;
+                }
+
+                // Officer log channel
+                ulong officerLogChannelId = 1440209811621937273;
+                var officerChannel = _client.GetChannel(officerLogChannelId) as IMessageChannel;
+
+                int sent = 0;
+                List<ulong> failed = new();
+
+                foreach (var user in unregistered)
+                {
+                    try
+                    {
+                        var dm = await user.CreateDMChannelAsync();
+                        await dm.SendMessageAsync(
+                            $"👋 Hello **{user.Username}**, you still need to register with the Tribe Bot.\n" +
+                            $"Please type `!register` here in DM.\n\n" +
+                            $"Registration is required to participate in tribe events.");
+
+                        sent++;
+
+                        await Task.Delay(1200); // safe delay for Discord rate limits
+                    }
+                    catch
+                    {
+                        failed.Add(user.Id);
+
+                        if (officerChannel != null)
+                            await officerChannel.SendMessageAsync(
+                                $"⚠️ Could not DM <@{user.Id}> — Their DMs may be closed.");
+
+                        await Task.Delay(2000); // longer cooldown after a failure
+                    }
+                }
+
+                // Build final summary for the officer who ran the command
+                string result =
+                    $"📨 **Manual Registration Reminder Summary**\n\n" +
+                    $"• Unregistered members: **{unregistered.Count}**\n" +
+                    $"• DMs sent successfully: **{sent}**\n" +
+                    $"• Failed deliveries: **{failed.Count}**";
+
+                if (failed.Count > 0)
+                {
+                    result += "\n\n⚠️ **Could not DM:**\n" +
+                              string.Join("\n", failed.Select(id => $"• <@{id}>"));
+                }
+
+                await originChannel.SendMessageAsync(result);
+            }
+            catch (Exception ex)
+            {
+                await originChannel.SendMessageAsync($"❌ Error sending reminders: {ex.Message}");
+            }
+        }
+
 
 
         // ======================================================
@@ -2139,9 +2629,12 @@ namespace TribeBot.Bot
 
         private async Task HandleInteractionAsync(SocketInteraction interaction)
         {
-            try
+            //
+            // ===== Slash Commands =====
+            //
+            if (interaction is SocketSlashCommand cmd)
             {
-                if (interaction is SocketSlashCommand cmd)
+                try
                 {
                     switch (cmd.Data.Name)
                     {
@@ -2150,12 +2643,88 @@ namespace TribeBot.Bot
                             break;
                     }
                 }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Interaction error: " + ex.Message);
+                }
+
+                return; // IMPORTANT — only leave for slash commands
             }
-            catch (Exception ex)
+
+
+            //
+            // ===== Poll Button Clicks =====
+            //
+            if (interaction is SocketMessageComponent component &&
+                component.Data.CustomId.StartsWith("poll:"))
             {
-                Console.WriteLine("Interaction error: " + ex.Message);
+                try
+                {
+                    // Acknowledge instantly
+                    await component.DeferAsync(ephemeral: true);
+
+                    var voteService = _services.GetService<IVoteService>();
+                    var memberService = _services.GetService<IMemberService>();
+
+                    var parts = component.Data.CustomId.Split(':');
+                    string pollId = parts[1];
+                    string choice = parts[2];
+
+                    var poll = await voteService.GetPollAsync(pollId);
+
+                    if (poll == null)
+                    {
+                        await component.FollowupAsync("❌ Poll not found.", ephemeral: true);
+                        return;
+                    }
+
+                    // Check expiration
+                    if (DateTime.UtcNow > poll.EndDateUtc)
+                    {
+                        await component.FollowupAsync(
+                            "⏳ This poll has ended. Results will be announced soon.",
+                            ephemeral: true
+                        );
+                        return;
+                    }
+
+                    var member = await memberService
+                        .GetMemberByDiscordIdAsync(component.User.Id.ToString());
+
+                    var vote = new PollVoteRecord
+                    {
+                        PollId = pollId,
+                        Choice = choice,
+                        DiscordUserId = component.User.Id.ToString(),
+                        IngameName = member?.IngameName ?? "",
+                        TimestampUtc = DateTime.UtcNow
+                    };
+
+                    // Save (slow ok after defer)
+                    await voteService.AddOrUpdateVoteAsync(vote);
+
+                    await component.FollowupAsync(
+                        $"🗳️ Your vote for **{choice}** has been recorded!",
+                        ephemeral: true
+                    );
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Poll interaction error: " + ex.Message);
+                }
+
+                return; // IMPORTANT — leave after finishing button
             }
+
+            //
+            // If it's something else → ignore
+            //
         }
+
+
+
+
+
 
         // ======================================================
         // HELPER: SPLIT LONG MESSAGES
@@ -2190,3 +2759,7 @@ namespace TribeBot.Bot
     }
 }
 #endregion
+
+
+
+

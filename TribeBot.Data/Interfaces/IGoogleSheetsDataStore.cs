@@ -30,5 +30,17 @@ namespace TribeBot.Data.Interfaces
         Task<List<FineRecord>> GetAllFinesAsync();
         Task UpdateFineAsync(FineRecord fine);
         Task RemoveFineByIdAsync(string fineId);
+
+
+        // Polls
+        Task AddPollAsync(PollRecord poll);
+        Task<List<PollRecord>> GetAllPollsAsync();
+        Task RemovePollAsync(string pollId);
+
+        // Poll Votes
+        Task AddPollVoteAsync(PollVoteRecord vote);
+        Task<List<PollVoteRecord>> GetVotesForPollAsync(string pollId);
+        Task RemoveVotesForPollAsync(string pollId);
+
     }
 }

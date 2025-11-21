@@ -16,6 +16,12 @@ namespace TribeBot.Data.GoogleSheets
         private const string ReignSheet = "ReignRegistrations";
         private const string DonationsSheet = "Donations";
         private const string FinesSheet = "Fines";
+        private const string PollSheet = "Polls";
+        private const string PollVotesSheet = "PollVotes";
+
+        //Multiple use Gid's 
+        private const int PollsSheetId = 1167930524;
+        private const int PollVotesSheetId = 994564864;
 
         public GoogleSheetsDataStore(string credentialsPath, string spreadsheetId)
         {
@@ -381,6 +387,202 @@ namespace TribeBot.Data.GoogleSheets
             };
 
             await _sheetsService.Spreadsheets.BatchUpdate(batch, _spreadsheetId).ExecuteAsync();
+        }
+
+
+        // AddPoll
+
+        public async Task AddPollAsync(PollRecord poll) 
+        {
+
+            var values = new List<object>
+            {
+                poll.PollId,
+                poll.Question,
+                poll.EndDateUtc.ToString("o"),
+                Newtonsoft.Json.JsonConvert.SerializeObject(poll.Options),
+                poll.CreatedByDiscordId,
+                poll.CreatedAtUtc.ToString("o")
+            };
+
+            var append = _sheetsService.Spreadsheets.Values.Append(
+            new ValueRange { Values = new List<IList<object>> { values } },
+            _spreadsheetId,
+            $"{PollSheet}!A:F");
+
+            append.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+
+            await append.ExecuteAsync();
+
+        }
+
+        //Get all polls
+        public async Task<List<PollRecord>> GetAllPollsAsync()
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{PollSheet}!A2:F");
+
+            var response = await request.ExecuteAsync();
+            var list = new List<PollRecord>();
+
+            if (response.Values == null)
+            {
+                return list;
+            }
+
+            foreach (var row in response.Values)
+            {
+                if (row.Count < 6) continue;
+
+                list.Add(new PollRecord
+                {
+                    PollId = row[0].ToString(),
+                    Question = row[1].ToString(),
+                    EndDateUtc = DateTime.Parse(row[2].ToString()),
+                    Options = Newtonsoft.Json.JsonConvert.DeserializeObject<List<string>>(row[3].ToString()),
+                    CreatedByDiscordId = row[4].ToString(),
+                    CreatedAtUtc = DateTime.Parse(row[5].ToString())
+                });
+            }
+            return list;
+        }
+
+        //Remove poll
+        public async Task RemovePollAsync(string pollId)
+        {
+            var polls = await GetAllPollsAsync();
+            int index = polls.FindIndex(p => p.PollId == pollId);
+
+            if (index == -1)
+                return;
+
+            int row = index + 2;
+
+            var delete = new Google.Apis.Sheets.v4.Data.DeleteDimensionRequest
+            {
+                Range = new Google.Apis.Sheets.v4.Data.DimensionRange
+                {
+                    SheetId = PollsSheetId,
+                    Dimension = "ROWS",
+                    StartIndex = row - 1,
+                    EndIndex = row
+                }
+            };
+
+            var batch = new Google.Apis.Sheets.v4.Data.BatchUpdateSpreadsheetRequest
+            {
+                Requests = new List<Google.Apis.Sheets.v4.Data.Request>
+        {
+            new Google.Apis.Sheets.v4.Data.Request { DeleteDimension = delete }
+        }
+            };
+
+            await _sheetsService.Spreadsheets.BatchUpdate(batch, _spreadsheetId).ExecuteAsync();
+        }
+
+        // AddPollVote
+        public async Task AddPollVoteAsync(PollVoteRecord vote)
+        {
+            var values = new List<object>
+             {
+                 vote.PollId,
+                 vote.DiscordUserId,
+                 vote.IngameName,
+                 vote.Choice,
+                 vote.TimestampUtc.ToString("o")
+             };
+
+            var append = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange { Values = new List<IList<object>> { values } },
+                _spreadsheetId,
+                $"{PollVotesSheet}!A:E");
+
+            append.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+
+            await append.ExecuteAsync();
+        }
+
+        //Get votes for Pol
+
+        public async Task<List<PollVoteRecord>> GetVotesForPollAsync(string pollId)
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{PollVotesSheet}!A2:E");
+
+            var response = await request.ExecuteAsync();
+            var list = new List<PollVoteRecord>();
+
+            if (response.Values == null)
+                return list;
+
+            foreach (var row in response.Values)
+            {
+                if (row.Count < 5) continue;
+                if (row[0].ToString() != pollId) continue;
+
+                list.Add(new PollVoteRecord
+                {
+                    PollId = row[0].ToString(),
+                    DiscordUserId = row[1].ToString(),
+                    IngameName = row[2].ToString(),
+                    Choice = row[3].ToString(),
+                    TimestampUtc = DateTime.Parse(row[4].ToString())
+                });
+            }
+
+            return list;
+        }
+
+        public async Task RemoveVotesForPollAsync(string pollId)
+        {
+            var votes = await GetVotesForPollAsync(pollId);
+            if (votes.Count == 0) return;
+
+            // Load entire sheet range
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{PollVotesSheet}!A2:E");
+
+            var response = await request.ExecuteAsync();
+            if (response.Values == null)
+                return;
+
+            int rowIndex = 2;
+
+            foreach (var row in response.Values)
+            {
+                if (row.Count < 1) continue;
+
+                if (row[0].ToString() == pollId)
+                {
+                    var delete = new Google.Apis.Sheets.v4.Data.DeleteDimensionRequest
+                    {
+                        Range = new Google.Apis.Sheets.v4.Data.DimensionRange
+                        {
+                            SheetId = PollVotesSheetId,
+                            Dimension = "ROWS",
+                            StartIndex = rowIndex - 1,
+                            EndIndex = rowIndex
+                        }
+                    };
+
+                    var batch = new Google.Apis.Sheets.v4.Data.BatchUpdateSpreadsheetRequest
+                    {
+                        Requests = new List<Google.Apis.Sheets.v4.Data.Request>
+                {
+                    new Google.Apis.Sheets.v4.Data.Request { DeleteDimension = delete }
+                }
+                    };
+
+                    await _sheetsService.Spreadsheets.BatchUpdate(batch, _spreadsheetId).ExecuteAsync();
+                }
+
+                rowIndex++;
+            }
         }
     }
 }
