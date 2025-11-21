@@ -87,7 +87,6 @@ namespace TribeBot.Bot
             // Discord client
             services.AddSingleton(_client);
         }
-
         private Task LogAsync(LogMessage msg)
         {
             Console.WriteLine(msg.ToString());
@@ -165,8 +164,6 @@ namespace TribeBot.Bot
                 }
             });
         }
-
-
         private async Task<ReminderSummary> SendRegistrationRemindersAsync()
         {
             var summary = new ReminderSummary();
@@ -247,9 +244,6 @@ namespace TribeBot.Bot
 
             return summary;
         }
-
-
-
         private async Task MessageReceivedAsync(SocketMessage message)
         {
             if (message.Author.IsBot) return;
@@ -301,8 +295,6 @@ namespace TribeBot.Bot
             }
 
             #endregion
-
-
             #region REGISTRATION OR UPDATE CONTINUATION (DM ONLY)
 
             // ============================
@@ -451,11 +443,9 @@ namespace TribeBot.Bot
                         return;
                 }
             }
-
             // ============================
             // REGISTRATION FLOW (DM ONLY)
             // ============================
-
             if (isDM && _registrationSessions.ContainsKey(userId))
             {
                 var session = _registrationSessions[userId];
@@ -613,9 +603,7 @@ namespace TribeBot.Bot
                         }
                 }
             }
-
             #endregion
-
             #region MEMBER SELF-UPDATE
 
             //Step 1 update ingame name 
@@ -771,6 +759,75 @@ namespace TribeBot.Bot
             }
 
             // ============================
+            // !updateReignPoints <points> @user  (OFFICERS ONLY)
+            // ============================
+
+            if (message.Content.StartsWith("!updateReignPoints ", StringComparison.OrdinalIgnoreCase))
+            {
+                if (message.Channel is not SocketGuildChannel)
+                {
+                    await message.Channel.SendMessageAsync("This command must be used in the server.");
+                    return;
+                }
+
+                var caller = message.Author as SocketGuildUser;
+                ulong officerRoleId = 1222665812775534592; // Officer role
+
+                if (!caller.Roles.Any(r => r.Id == officerRoleId))
+                {
+                    await message.Channel.SendMessageAsync($"{caller.Mention} you do not have permission.");
+                    return;
+                }
+
+                var parts = message.Content.Split(" ");
+
+                if (parts.Length < 2 || message.MentionedUsers.Count == 0)
+                {
+                    await message.Channel.SendMessageAsync("Usage: `!updateReignPoints <points> @user`");
+                    return;
+                }
+
+                if (!int.TryParse(parts[1], out int newPoints))
+                {
+                    await message.Channel.SendMessageAsync("❌ Invalid number. Example: `!updateReignPoints 150000 @user`");
+                    return;
+                }
+
+                var target = message.MentionedUsers.First();
+                var memberService = _services.GetService<IMemberService>();
+                var member = await memberService.GetMemberByDiscordIdAsync(target.Id.ToString());
+
+                if (member == null)
+                {
+                    await message.Channel.SendMessageAsync($"❌ <@{target.Id}> is not registered.");
+                    return;
+                }
+
+                member.ReignPoints = newPoints;
+                member.LastUpdatedUTC = DateTime.UtcNow;
+
+                await memberService.RegisterOrUpdateAsync(member);
+
+                await message.Channel.SendMessageAsync(
+                    $"🏆 Updated **Reign Points** for <@{target.Id}> to **{newPoints:N0}**."
+                );
+
+                // Log to officer channel
+                ulong officerLog = 1440209811621937273;
+                var log = _client.GetChannel(officerLog) as IMessageChannel;
+                if (log != null)
+                    await log.SendMessageAsync(
+                        $"📝 **Reign Points Updated**\n" +
+                        $"• User: <@{target.Id}>\n" +
+                        $"• New Points: **{newPoints:N0}**\n" +
+                        $"• By: <@{caller.Id}>\n" +
+                        $"• Time: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC"
+                    );
+
+                return;
+            }
+
+            // ============================
             // Update entire profile via DM
             // ============================
 
@@ -815,9 +872,7 @@ namespace TribeBot.Bot
 
                 return;
             }
-
             #endregion
-
             #region MEMBER ADMINISTRATION
 
             // ============================
@@ -886,7 +941,6 @@ namespace TribeBot.Bot
                 await SendLongMessageAsync(message.Channel, msg);
                 return;
             }
-
             // ============================
             // !registerreminder (manual)
             // ============================
@@ -918,10 +972,6 @@ namespace TribeBot.Bot
 
                 return;
             }
-
-
-
-
 
             // ============================
             // !listnonregistered
@@ -969,7 +1019,6 @@ namespace TribeBot.Bot
             // ============================
             // !applyreign
             // ============================
-
             if (message.Content.Equals("!applyreign", StringComparison.OrdinalIgnoreCase))
             {
                 if (_reignLocked)
@@ -1050,7 +1099,6 @@ namespace TribeBot.Bot
                 await SendLongMessageAsync(message.Channel, output);
                 return;
             }
-
             // ============================
             // !clearreign (OFFICERS ONLY)
             // ============================
@@ -1077,7 +1125,6 @@ namespace TribeBot.Bot
                     return;
                 }
             }
-
             // ============================
             // !lockreign (OFFICERS)
             // ============================
@@ -1106,7 +1153,6 @@ namespace TribeBot.Bot
                 }
                 return;
             }
-
             // ============================
             // !unlockreign (OFFICERS)
             // ============================
@@ -1130,7 +1176,6 @@ namespace TribeBot.Bot
                 }
                 return;
             }
-
             #region BANK SYSTEM
 
             // ============================
@@ -1162,7 +1207,6 @@ namespace TribeBot.Bot
                 await SendLongMessageAsync(message.Channel, response);
                 return;
             }
-
             // ============================
             // !bankunpaid
             // ============================
@@ -1197,7 +1241,6 @@ namespace TribeBot.Bot
                 await SendLongMessageAsync(message.Channel, msg);
                 return;
             }
-
             // ============================
             // !checkbank
             // ============================
@@ -1245,7 +1288,6 @@ namespace TribeBot.Bot
 
                 return;
             }
-
             // ============================
             // !bankreminder (OFFICERS ONLY)
             // ============================
@@ -1277,16 +1319,12 @@ namespace TribeBot.Bot
 
                 return;
             }
-
-
             #endregion
-
             #region POLL VOTING SYSTEM
 
             // ============================
-            // !pollcreate "question" YYYY-MM-DD option1 option2 option3...
+            // !pollcreate "question" YYYY-MM-DD "opt1" "opt2" "opt3"...  
             // ============================
-
             if (message.Content.StartsWith("!pollcreate", StringComparison.OrdinalIgnoreCase))
             {
                 if (message.Channel is not SocketGuildChannel)
@@ -1300,45 +1338,69 @@ namespace TribeBot.Bot
 
                 if (!caller.Roles.Any(r => r.Id == officerRoleId))
                 {
-                    await message.Channel.SendMessageAsync("You do not have permission, Ofcicers only.");
+                    await message.Channel.SendMessageAsync("You do not have permission. Officers only.");
                     return;
                 }
-                // Parse: !pollcreate "Question here" 2025-01-05 option1 option2 option3
-                var split = message.Content.Split('"');
-                if (split.Length < 3)
+
+                string input = message.Content;
+
+                // ============================
+                // 1. Extract quoted parts
+                // ============================
+                var quoted = System.Text.RegularExpressions.Regex.Matches(input, "\"([^\"]+)\"")
+                    .Select(m => m.Groups[1].Value)
+                    .ToList();
+
+                if (quoted.Count < 1)
                 {
-                    await message.Channel.SendMessageAsync("Usage: !pollcreate \"Question\" YYYY-MM-DD Option1 Option2 ...");
+                    await message.Channel.SendMessageAsync(
+                        "❌ You must include a quoted question.\nExample:\n" +
+                        "`!pollcreate \"Your question here\" 2025-03-01 \"Option A\" \"Option B\"`");
                     return;
                 }
 
-                string question = split[1].Trim();
+                string question = quoted[0];
 
-                // After closing quote: → YYYY-MM-DD option1 option2
-                string remainder = split[2].Trim();
-                var parts = remainder.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                // ============================
+                // 2. Extract the date
+                // ============================
+                // Remove the "!pollcreate" and question
+                string afterQuestion = input.Substring(input.IndexOf(quoted[0]) + quoted[0].Length + 2).Trim();
 
-                if (parts.Length < 2)
+                // First non-quoted "word" is the date
+                var dateMatch = System.Text.RegularExpressions.Regex.Match(afterQuestion, @"(\d{4}-\d{2}-\d{2})");
+                if (!dateMatch.Success)
                 {
-                    await message.Channel.SendMessageAsync("Usage: !pollcreate \"Question\" YYYY-MM-DD Option1 Option2 ...");
+                    await message.Channel.SendMessageAsync("❌ Missing or invalid date. Use YYYY-MM-DD.");
                     return;
                 }
 
-                // Parse end date
-                if (!DateTime.TryParse(parts[0], out DateTime endDate))
+                string dateStr = dateMatch.Groups[1].Value;
+
+                if (!DateTime.TryParse(dateStr, out DateTime endDate))
                 {
-                    await message.Channel.SendMessageAsync("Invalid date. Use format YYYY-MM-DD");
+                    await message.Channel.SendMessageAsync("❌ Invalid date. Use YYYY-MM-DD.");
                     return;
                 }
 
-                var options = parts.Skip(1).ToList();
-                if (options.Count < 2)
+                // ============================
+                // 3. Extract options (remaining quoted values)
+                // ============================
+                if (quoted.Count < 3)
                 {
-                    await message.Channel.SendMessageAsync("You must provide at least two options.");
+                    await message.Channel.SendMessageAsync(
+                        "❌ You must include at least TWO quoted options.\nExample:\n" +
+                        "`!pollcreate \"Your question\" 2025-03-01 \"Option A\" \"Option B\"`");
                     return;
                 }
+
+                var options = quoted.Skip(1).ToList(); // skip question
 
                 string pollId = Guid.NewGuid().ToString("N").Substring(0, 8);
 
+                // ============================
+                // 4. Save poll
+                // ============================
                 var voteService = _services.GetService<IVoteService>();
 
                 var poll = new PollRecord
@@ -1360,7 +1422,6 @@ namespace TribeBot.Bot
                     $"Ends: `{endDate:yyyy-MM-dd}`\n" +
                     $"DMs sending in the background…");
 
-                // Send DMs in the background
                 _ = Task.Run(async () =>
                 {
                     await SendPollDMsAsync(poll);
@@ -1368,7 +1429,6 @@ namespace TribeBot.Bot
 
                 return;
             }
-
             // ============================
             // !polllist
             // ============================
@@ -1402,7 +1462,6 @@ namespace TribeBot.Bot
                 await SendLongMessageAsync(message.Channel, output);
                 return;
             }
-
             // ============================
             // !pollremove <pollId>
             // ============================
@@ -1483,7 +1542,6 @@ namespace TribeBot.Bot
                 await SendLongMessageAsync(message.Channel, output);
                 return;
             }
-
             // ============================
             // !pollofficer <pollId>
             // ============================
@@ -1548,11 +1606,6 @@ namespace TribeBot.Bot
                 await SendLongMessageAsync(message.Channel, output);
                 return;
             }
-
-
-
-
-
             #endregion
 
             #region DONATION OCR
@@ -1825,7 +1878,6 @@ namespace TribeBot.Bot
                 return;
 
             }
-
             // =========================================
             // !finereign @user amount reason
             //==========================================
@@ -1913,7 +1965,6 @@ namespace TribeBot.Bot
 
                 return;
             }
-
             // ============================
             // !finelist
             // ============================
@@ -1968,7 +2019,6 @@ namespace TribeBot.Bot
                 await SendLongMessageAsync(message.Channel, msg);
                 return;
             }
-
             // ============================
             // !removefine FineId
             // ============================
@@ -2126,10 +2176,124 @@ namespace TribeBot.Bot
                 return;
             }
 
+            // ===============================================
+            // USER VOTE COMMAND (DM ONLY)
+            // ===============================================
+            if (isDM && message.Content.StartsWith("!vote ", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = message.Content.Split(" ");
+                if (parts.Length < 2)
+                {
+                    await message.Channel.SendMessageAsync("Usage: `!vote <option number>`");
+                    return;
+                }
+
+                if (!int.TryParse(parts[1], out int selectedOption))
+                {
+                    await message.Channel.SendMessageAsync("❌ Invalid number. Example: `!vote 2`");
+                    return;
+                }
+
+                var voteService = _services.GetService<IVoteService>();
+                var memberService = _services.GetService<IMemberService>();
+
+                // Get the most recent active poll (simplest)
+                var polls = await voteService.GetAllPollsAsync();
+                var activePoll = polls
+                    .Where(p => p.EndDateUtc > DateTime.UtcNow)
+                    .OrderByDescending(p => p.CreatedAtUtc)
+                    .FirstOrDefault();
+
+                if (activePoll == null)
+                {
+                    await message.Channel.SendMessageAsync("❌ No active poll to vote in.");
+                    return;
+                }
+
+                if (selectedOption < 1 || selectedOption > activePoll.Options.Count)
+                {
+                    await message.Channel.SendMessageAsync("❌ That option does not exist in this poll.");
+                    return;
+                }
+
+                var member = await memberService.GetMemberByDiscordIdAsync(message.Author.Id.ToString());
+                string choice = activePoll.Options[selectedOption - 1];
+
+                var vote = new PollVoteRecord
+                {
+                    PollId = activePoll.PollId,
+                    Choice = choice,
+                    DiscordUserId = message.Author.Id.ToString(),
+                    IngameName = member?.IngameName ?? "",
+                    TimestampUtc = DateTime.UtcNow
+                };
+
+                await voteService.AddOrUpdateVoteAsync(vote);
+
+                await message.Channel.SendMessageAsync(
+                    $"🗳️ **Your vote has been recorded!**\n" +
+                    $"You voted for: **{choice}**");
+                return;
+            }
+
+            // ============================
+            // !promote <YouTubeLink>  (DM ONLY, CONTENT CREATORS ONLY)
+            // ============================
+            if (isDM && message.Content.StartsWith("!promote ", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong CONTENT_CREATOR_ROLE = 1392919560633581728;     // <-- Your role ID
+                ulong PROMOTION_CHANNEL = 1440887368247939154;        // <-- Your promotion channel
+
+                var guild = _client.GetGuild(1109193500664287336);
+                var user = guild.GetUser(message.Author.Id);
+
+                if (user == null)
+                {
+                    await message.Channel.SendMessageAsync("❌ You must be in the server to use this command.");
+                    return;
+                }
+
+                if (!user.Roles.Any(r => r.Id == CONTENT_CREATOR_ROLE))
+                {
+                    await message.Channel.SendMessageAsync(
+                        "❌ You must have the **Content Creator** role to use this command.");
+                    return;
+                }
+
+                string link = message.Content.Substring("!promote ".Length).Trim();
+
+                if (!link.StartsWith("http"))
+                {
+                    await message.Channel.SendMessageAsync("❌ Invalid link. Provide a full YouTube URL.");
+                    return;
+                }
+
+                var promoChannel = _client.GetChannel(PROMOTION_CHANNEL) as IMessageChannel;
+                if (promoChannel == null)
+                {
+                    await message.Channel.SendMessageAsync("❌ Promotion channel not found.");
+                    return;
+                }
+
+                // Send promotion message
+                await promoChannel.SendMessageAsync(
+                    $"@everyone\n" +
+                    $"📣 **New Video Drop!**\n\n" +
+                    $"🔥 **Our HOGS Content Creator {message.Author.Mention} just uploaded a new video!**\n\n" +
+                    $"Support them by checking it out here:\n" +
+                    $"👉 **{link}**\n\n" +
+                    $"👍 Like the video\n" +
+                    $"💬 Leave a comment\n" +
+                    $"🔔 Subscribe to not miss future uploads!\n\n" +
+                    $"Let's show them some love! 🐗💥"
+                );
+
+
+                await message.Channel.SendMessageAsync("✅ Your promotion has been posted!");
+                return;
+            }
 
             #endregion
-
-
             #region OTHER SIMPLE COMMANDS
 
             // ============================
@@ -2178,8 +2342,6 @@ namespace TribeBot.Bot
                 await SendLongMessageAsync(message.Channel, txt);
                 return;
             }
-
-
             // ============================
             // !viewinfo @User (OFFICERS ONLY)
             // ============================
@@ -2275,9 +2437,6 @@ namespace TribeBot.Bot
                 return;
             }
 
-
-
-
             // ============================
             // !help — Show all commands
             // ============================
@@ -2316,7 +2475,8 @@ namespace TribeBot.Bot
                     "`!updatecollector LEVEL` — Update Collector Level\n" +
                     "`!updateall` — Update all fields through DM\n\n" +
                     "**Officer Only:**\n" +
-                    "`!viewinfo @user` — View a user's full profile\n\n" +
+                    "`!viewinfo @user` — View a user's full profile\n" +
+                    "`!updateReignPoints @user POINTS` — Manually adjust a member's Reign Points\n\n" +
 
                     "==============================\n" +
                     "⚔️ **REIGN EVENT COMMANDS**\n" +
@@ -2361,36 +2521,42 @@ namespace TribeBot.Bot
                     "==============================\n" +
                     "**User Commands:**\n" +
                     "`!pollshow <pollId>` — Show anonymous poll results\n" +
-                    "`!polllist` — List all active and ended polls\n\n" +
+                    "`!polllist` — List all active and ended polls\n" +
+                    "`!vote <number>` — Vote in an active poll (DM ONLY)\n\n" +
 
                     "**Officer Only:**\n" +
-                    "`!pollcreate \"question\" YYYY-MM-DD option1 option2 ...` — Create a poll\n" +
+                    "`!pollcreate \"question\" YYYY-MM-DD \"option1\" \"option2\" ...` — Create a poll\n" +
                     "`!pollremove <pollId>` — Delete a poll and all votes\n" +
-                    "`!pollofficer <pollId>` — Show detailed poll results (who voted what)\n\n" +
+                    "`!pollofficer <pollId>` — Show poll results\n\n" +
+
+                    "==============================\n" +
+                    "🎥 **CONTENT CREATOR COMMANDS**\n" +
+                    "==============================\n" +
+                    "`!promote <YouTubeLink>` — Post your newest video to the promotion channel (DM ONLY)\n\n" +
 
                     "==============================\n" +
                     "🐗 **NOTES**\n" +
                     "==============================\n" +
                     "• All OCR uploads must be clear and readable\n" +
                     "• Expired polls stop accepting votes automatically\n" +
-                    "• Use `!pollofficer`\n\n" +
+                    "• Use `!pollofficer` to view detailed results\n\n" +
 
                     "==============================\n" +
                     "🐗 **NEED HELP?**\n" +
                     "==============================\n" +
                     "Contact an officer if something looks wrong.\n";
 
+
                 await SendLongMessageAsync(message.Channel, helpMsg);
                 return;
             }
 
-
-
             #endregion
         }
 
-
-        //POLL DM SYSTEM
+        // ===============================================
+        // SEND POLL TO USERS (DM-only, no buttons)
+        // ===============================================
         private async Task SendPollDMsAsync(PollRecord poll)
         {
             try
@@ -2401,8 +2567,7 @@ namespace TribeBot.Bot
                 var members = await memberService.GetAllMembersAsync();
                 var ids = members.Select(m => ulong.Parse(m.DiscordUserId)).ToList();
 
-                // var role = guild.GetRole(1222668156271591485); // HOGS role
-                var role = guild.GetRole(1439972286877794314);
+                var role = guild.GetRole(1439972286877794314); // HOGS role
                 var targets = role.Members.Where(m => ids.Contains(m.Id)).ToList();
 
                 foreach (var user in targets)
@@ -2411,35 +2576,42 @@ namespace TribeBot.Bot
                     {
                         var dm = await user.CreateDMChannelAsync();
 
-                        var builder = new ComponentBuilder();
-                        foreach (var opt in poll.Options)
-                            builder.WithButton(opt, customId: $"poll:{poll.PollId}:{opt}", style: ButtonStyle.Primary);
+                        // Build numbered option list
+                        string optionList = "";
+                        for (int i = 0; i < poll.Options.Count; i++)
+                        {
+                            optionList += $"{i + 1}) {poll.Options[i]}\n";
+                        }
 
-                        await dm.SendMessageAsync(
-                            $"📊 **New Poll:**\n{poll.Question}\n\nEnds: `{poll.EndDateUtc:yyyy-MM-dd}`",
-                            components: builder.Build());
+                        string msg =
+                            $"📊 **New Poll**\n" +
+                            $"**{poll.Question}**\n\n" +
+                            "**Options:**\n" +
+                            optionList + "\n" +
+                            "To vote, reply **here in DM** with for example:\n" +
+                            $"`!vote 1`\n\n" +
+                            $"Poll ID: `{poll.PollId}`\n" +
+                            $"Ends: {poll.EndDateUtc:yyyy-MM-dd}";
 
-                        await Task.Yield();
+                        await dm.SendMessageAsync(msg);
+
                         await Task.Delay(1200);
                     }
                     catch
                     {
-                        // Log failure to officer channel
-                        var logChannel = _client.GetChannel(1440209811621937273) as IMessageChannel;
-                        if (logChannel != null)
-                            await logChannel.SendMessageAsync($"⚠️ Could not DM <@{user.Id}> for poll `{poll.PollId}`.");
+                        var log = _client.GetChannel(1440209811621937273) as IMessageChannel;
+                        if (log != null)
+                            await log.SendMessageAsync($"⚠️ Could not DM <@{user.Id}> for poll `{poll.PollId}`.");
 
-                        await Task.Yield();
                         await Task.Delay(2000);
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Poll DM error: {ex.Message}");
+                Console.WriteLine("Poll DM error: " + ex.Message);
             }
         }
-
 
         private async Task SendBankReminderManualAsync(SocketGuildChannel originChannel)
         {
@@ -2535,8 +2707,6 @@ namespace TribeBot.Bot
             }
         }
 
-
-
         //Manual sender for registration
         private async Task SendRegistrationReminderManualAsync(IMessageChannel originChannel)
         {
@@ -2621,8 +2791,6 @@ namespace TribeBot.Bot
             }
         }
 
-
-
         // ======================================================
         // SLASH COMMAND HANDLER
         // ======================================================
@@ -2650,81 +2818,7 @@ namespace TribeBot.Bot
 
                 return; // IMPORTANT — only leave for slash commands
             }
-
-
-            //
-            // ===== Poll Button Clicks =====
-            //
-            if (interaction is SocketMessageComponent component &&
-                component.Data.CustomId.StartsWith("poll:"))
-            {
-                try
-                {
-                    // Acknowledge instantly
-                    await component.DeferAsync(ephemeral: true);
-
-                    var voteService = _services.GetService<IVoteService>();
-                    var memberService = _services.GetService<IMemberService>();
-
-                    var parts = component.Data.CustomId.Split(':');
-                    string pollId = parts[1];
-                    string choice = parts[2];
-
-                    var poll = await voteService.GetPollAsync(pollId);
-
-                    if (poll == null)
-                    {
-                        await component.FollowupAsync("❌ Poll not found.", ephemeral: true);
-                        return;
-                    }
-
-                    // Check expiration
-                    if (DateTime.UtcNow > poll.EndDateUtc)
-                    {
-                        await component.FollowupAsync(
-                            "⏳ This poll has ended. Results will be announced soon.",
-                            ephemeral: true
-                        );
-                        return;
-                    }
-
-                    var member = await memberService
-                        .GetMemberByDiscordIdAsync(component.User.Id.ToString());
-
-                    var vote = new PollVoteRecord
-                    {
-                        PollId = pollId,
-                        Choice = choice,
-                        DiscordUserId = component.User.Id.ToString(),
-                        IngameName = member?.IngameName ?? "",
-                        TimestampUtc = DateTime.UtcNow
-                    };
-
-                    // Save (slow ok after defer)
-                    await voteService.AddOrUpdateVoteAsync(vote);
-
-                    await component.FollowupAsync(
-                        $"🗳️ Your vote for **{choice}** has been recorded!",
-                        ephemeral: true
-                    );
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("Poll interaction error: " + ex.Message);
-                }
-
-                return; // IMPORTANT — leave after finishing button
-            }
-
-            //
-            // If it's something else → ignore
-            //
         }
-
-
-
-
-
 
         // ======================================================
         // HELPER: SPLIT LONG MESSAGES
@@ -2759,7 +2853,3 @@ namespace TribeBot.Bot
     }
 }
 #endregion
-
-
-
-
