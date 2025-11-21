@@ -72,7 +72,7 @@ namespace TribeBot.Data.GoogleSheets
                     Might = int.TryParse(row[3]?.ToString(), out var m) ? m : 0,
                     KillPoints = long.TryParse(row[4]?.ToString(), out var k) ? k : 0,
                     CollectorLevel = int.TryParse(row[5]?.ToString(), out var c) ? c : 0,
-                    ReignPoints = int.TryParse(row[6]?.ToString(), out var rp) ? rp : 0,
+                    ReignPoints = ulong.TryParse(row[6]?.ToString(), out var rp) ? rp : 0,
                     LastUpdatedUTC = DateTime.TryParse(row[7]?.ToString(), out var d) ? d : DateTime.MinValue,
                     IsExempt = bool.TryParse(row[8]?.ToString(), out var ex) ? ex : false
                 };

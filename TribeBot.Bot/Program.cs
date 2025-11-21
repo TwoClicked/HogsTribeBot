@@ -787,7 +787,7 @@ namespace TribeBot.Bot
                     return;
                 }
 
-                if (!int.TryParse(parts[1], out int newPoints))
+                if (!ulong.TryParse(parts[1], out ulong newPoints))
                 {
                     await message.Channel.SendMessageAsync("❌ Invalid number. Example: `!updateReignPoints 150000 @user`");
                     return;
@@ -1087,7 +1087,7 @@ namespace TribeBot.Bot
                     return;
                 }
 
-                string output = "🏆 **Reign Applicants (Sorted ASC by ReignPoints)**\n\n";
+                string output = "🏆 **Reign Applicants ()**\n\n";
 
                 int position = 1;
                 foreach (var (member, reg) in results)
@@ -1176,6 +1176,136 @@ namespace TribeBot.Bot
                 }
                 return;
             }
+
+            // ============================
+            // !exempt @user  (OFFICERS ONLY)
+            // ============================
+            if (message.Content.StartsWith("!exempt", StringComparison.OrdinalIgnoreCase))
+            {
+                if (message.Channel is not SocketGuildChannel)
+                {
+                    await message.Channel.SendMessageAsync("This command must be used inside the server.");
+                    return;
+                }
+
+                var caller = message.Author as SocketGuildUser;
+                ulong officerRoleId = 1222665812775534592; // Officer role
+
+                if (!caller.Roles.Any(r => r.Id == officerRoleId))
+                {
+                    await message.Channel.SendMessageAsync($"{caller.Mention} you do not have permission.");
+                    return;
+                }
+
+                if (message.MentionedUsers.Count == 0)
+                {
+                    await message.Channel.SendMessageAsync("Usage: `!exempt @user`");
+                    return;
+                }
+
+                var target = message.MentionedUsers.First();
+
+                var memberService = _services.GetService<IMemberService>();
+                var member = await memberService.GetMemberByDiscordIdAsync(target.Id.ToString());
+
+                if (member == null)
+                {
+                    await message.Channel.SendMessageAsync($"❌ <@{target.Id}> is not registered.");
+                    return;
+                }
+
+                // Update IsExempt
+                member.IsExempt = true;
+                member.LastUpdatedUTC = DateTime.UtcNow;
+                await memberService.RegisterOrUpdateAsync(member);
+
+                await message.Channel.SendMessageAsync(
+                    $"🟦 <@{target.Id}> is now **EXEMPT** from weekly donations."
+                );
+
+                // Log to officer channel
+                ulong officerLogChannelId = 1440209811621937273;
+                var logChannel = _client.GetChannel(officerLogChannelId) as IMessageChannel;
+
+                if (logChannel != null)
+                {
+                    await logChannel.SendMessageAsync(
+                        $"📝 **Donation Exemption Updated**\n" +
+                        $"• User: <@{target.Id}>\n" +
+                        $"• Status: **EXEMPT**\n" +
+                        $"• By: <@{caller.Id}>\n" +
+                        $"• Time: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC"
+                    );
+                }
+
+                return;
+            }
+
+            // ============================
+            // !unexempt @user  (OFFICERS ONLY)
+            // ============================
+            if (message.Content.StartsWith("!unexempt", StringComparison.OrdinalIgnoreCase))
+            {
+                if (message.Channel is not SocketGuildChannel)
+                {
+                    await message.Channel.SendMessageAsync("This command must be used inside the server.");
+                    return;
+                }
+
+                var caller = message.Author as SocketGuildUser;
+                ulong officerRoleId = 1222665812775534592; // Officer role
+
+                if (!caller.Roles.Any(r => r.Id == officerRoleId))
+                {
+                    await message.Channel.SendMessageAsync($"{caller.Mention} you do not have permission.");
+                    return;
+                }
+
+                if (message.MentionedUsers.Count == 0)
+                {
+                    await message.Channel.SendMessageAsync("Usage: `!unexempt @user`");
+                    return;
+                }
+
+                var target = message.MentionedUsers.First();
+
+                var memberService = _services.GetService<IMemberService>();
+                var member = await memberService.GetMemberByDiscordIdAsync(target.Id.ToString());
+
+                if (member == null)
+                {
+                    await message.Channel.SendMessageAsync($"❌ <@{target.Id}> is not registered.");
+                    return;
+                }
+
+                // Remove exempt status
+                member.IsExempt = false;
+                member.LastUpdatedUTC = DateTime.UtcNow;
+                await memberService.RegisterOrUpdateAsync(member);
+
+                await message.Channel.SendMessageAsync(
+                    $"🟥 <@{target.Id}> is now **NOT EXEMPT** from weekly donations."
+                );
+
+                // Log to officer channel
+                ulong officerLogChannelId = 1440209811621937273;
+                var logChannel = _client.GetChannel(officerLogChannelId) as IMessageChannel;
+
+                if (logChannel != null)
+                {
+                    await logChannel.SendMessageAsync(
+                        $"📝 **Donation Exemption Removed**\n" +
+                        $"• User: <@{target.Id}>\n" +
+                        $"• Status: **NOT EXEMPT**\n" +
+                        $"• By: <@{caller.Id}>\n" +
+                        $"• Time: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC"
+                    );
+                }
+
+                return;
+            }
+
+
             #region BANK SYSTEM
 
             // ============================
@@ -2567,8 +2697,12 @@ namespace TribeBot.Bot
                 var members = await memberService.GetAllMembersAsync();
                 var ids = members.Select(m => ulong.Parse(m.DiscordUserId)).ToList();
 
+                //var role = guild.GetRole(1222668156271591485); // HOGS role
                 var role = guild.GetRole(1439972286877794314); // HOGS role
                 var targets = role.Members.Where(m => ids.Contains(m.Id)).ToList();
+
+                int sent = 0;
+                int failed = 0;
 
                 foreach (var user in targets)
                 {
@@ -2595,23 +2729,44 @@ namespace TribeBot.Bot
 
                         await dm.SendMessageAsync(msg);
 
+                        sent++;
                         await Task.Delay(1200);
                     }
                     catch
                     {
+                        failed++;
+
                         var log = _client.GetChannel(1440209811621937273) as IMessageChannel;
                         if (log != null)
-                            await log.SendMessageAsync($"⚠️ Could not DM <@{user.Id}> for poll `{poll.PollId}`.");
+                            await log.SendMessageAsync(
+                                $"⚠️ Could not DM <@{user.Id}> for poll `{poll.PollId}`."
+                            );
 
                         await Task.Delay(2000);
                     }
                 }
+
+                // ===== FINAL SUMMARY LOG =====
+                var officerLog = _client.GetChannel(1440209811621937273) as IMessageChannel;
+                if (officerLog != null)
+                {
+                    await officerLog.SendMessageAsync(
+                        $"📩 **Poll DM Summary**\n" +
+                        $"Poll ID: `{poll.PollId}`\n" +
+                        $"Question: **{poll.Question}**\n\n" +
+                        $"• DMs Sent: **{sent}**\n" +
+                        $"• Failed Deliveries: **{failed}**\n" +
+                        $"• Total Members Targeted: **{targets.Count}**\n" +
+                        $"• Time: `{DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC`"
+                    );
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Poll DM error: " + ex.Message);
+                Console.WriteLine($"Poll DM error: {ex.Message}");
             }
         }
+
 
         private async Task SendBankReminderManualAsync(SocketGuildChannel originChannel)
         {
