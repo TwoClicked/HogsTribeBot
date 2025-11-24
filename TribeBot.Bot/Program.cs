@@ -96,6 +96,14 @@ namespace TribeBot.Bot
         private async Task ReadyAsync()
         {
             Console.WriteLine($"Connected as {_client.CurrentUser}");
+            
+            // Load ReignLocked state from sheets
+
+            var dataStore = _services.GetService<IGoogleSheetsDataStore>();
+            _reignLocked = await dataStore.GetReignLockedAsync();
+
+            Console.WriteLine($"Reign lock state loaded{_reignLocked}");
+
 
             // GLOBAL slash command (badge requirement)
             try
@@ -1028,6 +1036,17 @@ namespace TribeBot.Bot
                     return;
                 }
 
+                ulong vrChannel = 1429640756104265829; // vr-submissions channel
+
+                // Restrict command being used outside of the two channels needed
+                if (message.Channel.Id != vrChannel)
+                {
+                    await message.Channel.SendMessageAsync(
+                        "**You can only use this command in the Vr-Submissions channel**."
+                    );
+                    return;
+                }
+
                 var fineService = _services.GetService<IFineService>();
                 var fines = await fineService.GetFinesForUserAsync(message.Author.Id.ToString());
 
@@ -1108,9 +1127,9 @@ namespace TribeBot.Bot
                 if (message.Channel is SocketGuildChannel)
                 {
                     var user = message.Author as SocketGuildUser;
-                    ulong officerRoleId = 1222665812775534592;
+                    ulong VikingReignRole = 1364209274322157639;
 
-                    if (!user.Roles.Any(r => r.Id == officerRoleId))
+                    if (!user.Roles.Any(r => r.Id == VikingReignRole))
                     {
                         await message.Channel.SendMessageAsync(
                             $"{message.Author.Mention} You cannot clear the list. Officers only.");
@@ -1134,9 +1153,9 @@ namespace TribeBot.Bot
                 if (message.Channel is SocketGuildChannel)
                 {
                     var user = message.Author as SocketGuildUser;
-                    ulong officerRoleId = 1222665812775534592;
+                    ulong VikingReignRole = 1364209274322157639;
 
-                    if (!user.Roles.Any(r => r.Id == officerRoleId))
+                    if (!user.Roles.Any(r => r.Id == VikingReignRole))
                     {
                         await message.Channel.SendMessageAsync(
                             $"{message.Author.Mention} You do not have permission. Officers only.");
@@ -1144,6 +1163,9 @@ namespace TribeBot.Bot
                     }
 
                     _reignLocked = true;
+
+                    var dataStore = _services.GetService<IGoogleSheetsDataStore>();
+                    await dataStore.SetReignLockedAsync(true); // <-- SAVE TO SHEETS
 
                     var fineService = _services.GetService<IFineService>();
                     await fineService.ReduceReignStrikesAsync();
@@ -1162,9 +1184,9 @@ namespace TribeBot.Bot
                 if (message.Channel is SocketGuildChannel)
                 {
                     var user = message.Author as SocketGuildUser;
-                    ulong officerRoleId = 1222665812775534592;
+                    ulong VikingReignRole = 1364209274322157639;
 
-                    if (!user.Roles.Any(r => r.Id == officerRoleId))
+                    if (!user.Roles.Any(r => r.Id == VikingReignRole))
                     {
                         await message.Channel.SendMessageAsync(
                             $"{message.Author.Mention} You do not have permission. Officers only.");
@@ -1172,6 +1194,10 @@ namespace TribeBot.Bot
                     }
 
                     _reignLocked = false;
+
+                    var dataStore = _services.GetService<IGoogleSheetsDataStore>();
+                    await dataStore.SetReignLockedAsync(false); // <-- Save to sheet
+
                     await message.Channel.SendMessageAsync("🔓 **Reign applications are now UNLOCKED.**");
                 }
                 return;
@@ -2142,7 +2168,7 @@ namespace TribeBot.Bot
                     foreach (var f in paid)
                     {
                         msg +=
-                            $"• **{f.IngameName}** — {f.Amount:N0} — `{f.FineType}` — FineID `{f.FineId}` — PAID\n";
+                            $"• **{f.IngameName}** — {f.Amount:N0} — `{f.FineType}` — FineID `{f.FineId}` `{f.ReignStrikes}` — PAID\n";
                     }
                 }
 

@@ -175,6 +175,58 @@ namespace TribeBot.Data.GoogleSheets
             await _sheetsService.Spreadsheets.Values.Clear(clear, _spreadsheetId, $"{ReignSheet}!A2:C").ExecuteAsync();
         }
 
+        public async Task<bool> GetReignLockedAsync()
+        {
+            string range = "Settings!A2:B2";
+
+            var response = await _sheetsService.Spreadsheets.Values
+                .Get(_spreadsheetId, range)
+                .ExecuteAsync();
+
+            if (response.Values == null || response.Values.Count == 0)
+                return false;
+
+            // Ensure B2 exists
+            if (response.Values[0].Count < 2)
+                return false;
+
+            string val = response.Values[0][1].ToString().Trim().ToLower();
+            return val == "true";
+        }
+
+
+        public async Task SetReignLockedAsync(bool locked)
+        {
+            string range = "Settings!A2:B2";
+
+            var body = new ValueRange
+            {
+                MajorDimension = "ROWS",   // ← important
+                Values = new List<IList<object>>
+        {
+            new List<object>
+            {
+                "ReignLocked",
+                locked ? "true" : "false"
+            }
+        }
+            };
+
+            var request = _sheetsService.Spreadsheets.Values.Update(body, _spreadsheetId, range);
+
+            request.ValueInputOption = SpreadsheetsResource
+                .ValuesResource
+                .UpdateRequest
+                .ValueInputOptionEnum
+                .RAW;
+
+            await request.ExecuteAsync();
+        }
+
+
+
+
+
         // ------------------------------------------------------
         // DONATIONS
         // ------------------------------------------------------
