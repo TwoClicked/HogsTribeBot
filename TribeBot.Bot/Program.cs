@@ -1106,7 +1106,7 @@ namespace TribeBot.Bot
                     return;
                 }
 
-                string output = "🏆 **Reign Applicants ()**\n\n";
+                string output = "🏆 **Reign Applicants (Rally&Def leads will have max points as they have prio)**\n\n";
 
                 int position = 1;
                 foreach (var (member, reg) in results)
@@ -1357,7 +1357,7 @@ namespace TribeBot.Bot
                         m.IsExempt ? "🟦 EXEMPT" :
                         paid >= goal ? "✅ PAID" : "❌ UNPAID";
 
-                    response += $"**{m.IngameName}** — {paid:N0} / 44,000,000 — {status}\n";
+                    response += $"**{m.IngameName}** — {status}\n";
                 }
 
                 await SendLongMessageAsync(message.Channel, response);
@@ -1375,13 +1375,9 @@ namespace TribeBot.Bot
                 var members = await memberService.GetAllMembersAsync();
                 var totals = await donationService.GetTotalsForAllUsersThisWeekAsync();
 
-                int goal = 44_000_000;
-
                 var unpaid = members
                     .Where(m => !m.IsExempt &&
-                                (!totals.ContainsKey(m.DiscordUserId) ||
-                                 totals[m.DiscordUserId] < goal))
-                    .OrderBy(m => m.IngameName)
+                                (!totals.ContainsKey(m.DiscordUserId) || totals[m.DiscordUserId] <= 0))
                     .ToList();
 
                 if (unpaid.Count == 0)
@@ -1397,8 +1393,9 @@ namespace TribeBot.Bot
                 await SendLongMessageAsync(message.Channel, msg);
                 return;
             }
+
             // ============================
-            // !checkbank
+            // !checkbank  — simplified paid/unpaid
             // ============================
 
             if (message.Content.Equals("!checkbank", StringComparison.OrdinalIgnoreCase))
@@ -1416,34 +1413,35 @@ namespace TribeBot.Bot
                     return;
                 }
 
-                string donationChannel = "<#1440050111353721053>";
-                int goal = 44_000_000;
-
+                // Exempt users
                 if (member.IsExempt)
                 {
                     await message.Channel.SendMessageAsync(
-                        $"{message.Author.Mention} 🟦 **You are exempt from weekly bank donations.**");
+                        $"{message.Author.Mention} 🟦 **You are exempt from weekly donations.**");
                     return;
                 }
 
-                int paid = await donationService.GetTotalForUserThisWeekAsync(id);
+                // Did this user pay at least once this week?
+                var donations = await donationService.GetTotalForUserThisWeekAsync(id);
 
-                if (paid >= goal)
+                if (donations > 0)
                 {
+                    // Paid ✔
                     await message.Channel.SendMessageAsync(
-                        $"{message.Author.Mention} 🎉 **You have paid your bank donation this week!**\n" +
-                        $"You donated **{paid:N0} / 44,000,000**.\nThanks for supporting the tribe! 🐗");
+                        $"{message.Author.Mention} 🎉 **You have PAID your donation this week!**\n" +
+                        $"Thank you for supporting the tribe 🐗💙");
                 }
                 else
                 {
+                    // Not paid ❌
                     await message.Channel.SendMessageAsync(
-                        $"{message.Author.Mention} ❌ **You have NOT completed your bank donation this week.**\n" +
-                        $"You have donated **{paid:N0} / 44,000,000**.\n" +
-                        $"Please upload your screenshot in {donationChannel}.");
+                        $"{message.Author.Mention} ❌ **You have NOT paid your weekly donation.**\n" +
+                        $"Please upload your screenshot in <#1440050111353721053>.");
                 }
 
                 return;
             }
+
             // ============================
             // !bankreminder (OFFICERS ONLY)
             // ============================
@@ -1766,6 +1764,7 @@ namespace TribeBot.Bot
 
             #region DONATION OCR
 
+
             ulong DONATION_CHANNEL_ID = 1440050111353721053;
 
             if (message.Channel.Id == DONATION_CHANNEL_ID && message.Attachments.Count > 0)
@@ -1778,21 +1777,19 @@ namespace TribeBot.Bot
                 string targetDiscordId = uploaderId;
                 string targetIngameName = null;
 
-                // PAYFOR SESSION CHECK
+                // PAYFOR logic
                 if (_payForSessions.TryGetValue(message.Author.Id, out string overrideTarget))
                 {
                     if (overrideTarget.StartsWith("DISCORD:"))
                         targetDiscordId = overrideTarget.Substring("DISCORD:".Length);
-
                     else if (overrideTarget.StartsWith("NAME:"))
                         targetIngameName = overrideTarget.Substring("NAME:".Length);
 
                     _payForSessions.Remove(message.Author.Id);
                 }
 
-                // Resolve the target member
+                // Resolve target member
                 Member targetMember;
-
                 if (targetIngameName != null)
                 {
                     var allMembers = await memberService.GetAllMembersAsync();
@@ -1806,12 +1803,11 @@ namespace TribeBot.Bot
 
                 if (targetMember == null)
                 {
-                    await message.Channel.SendMessageAsync(
-                        $"{message.Author.Mention} ❌ Could not find the target account. Donation not recorded.");
+                    await message.Channel.SendMessageAsync($"{message.Author.Mention} ❌ Could not find the target account.");
                     return;
                 }
 
-                // OCR the screenshot(s)
+                // ---- PROCESS OCR ----
                 int totalAmount = 0;
 
                 foreach (var attachment in message.Attachments)
@@ -1819,11 +1815,9 @@ namespace TribeBot.Bot
                     if (attachment.ContentType == null || !attachment.ContentType.StartsWith("image"))
                         continue;
 
-                    string tempPath = System.IO.Path.Combine(
-                        System.IO.Path.GetTempPath(),
-                        Guid.NewGuid().ToString() + ".png");
+                    string tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + ".png");
 
-                    using (var client = new System.Net.Http.HttpClient())
+                    using (var client = new HttpClient())
                     {
                         var bytes = await client.GetByteArrayAsync(attachment.Url);
                         await System.IO.File.WriteAllBytesAsync(tempPath, bytes);
@@ -1839,18 +1833,16 @@ namespace TribeBot.Bot
                 if (totalAmount <= 0)
                 {
                     await message.AddReactionAsync(new Emoji("❌"));
-                    await message.Channel.SendMessageAsync(
-                        $"{message.Author.Mention} I could not read any donation amount.");
+                    await message.Channel.SendMessageAsync($"{message.Author.Mention} I could not read any donation amount.");
                     return;
                 }
 
-                // Determine week boundaries
+                // Save donation – now always accepted
                 var now = DateTime.UtcNow;
                 int daysSinceMonday = ((int)now.DayOfWeek + 6) % 7;
                 DateTime weekStart = now.Date.AddDays(-daysSinceMonday);
                 DateTime weekEnd = weekStart.AddDays(7);
 
-                // SAVE DONATION — Corrected to assign to TARGET MEMBER
                 await donationService.AddDonationAsync(new DonationRecord
                 {
                     DiscordUserId = targetMember.DiscordUserId,
@@ -1863,7 +1855,10 @@ namespace TribeBot.Bot
 
                 await message.AddReactionAsync(new Emoji("✅"));
                 await message.Channel.SendMessageAsync(
-                    $"{message.Author.Mention} donation of **{totalAmount:N0}** recorded for **{targetMember.IngameName}**!");
+                    $"{message.Author.Mention} **✅ Your payment has been recorded.**"
+                );
+
+
                 return;
             }
 
@@ -2034,10 +2029,10 @@ namespace TribeBot.Bot
                 return;
 
             }
+
             // =========================================
             // !finereign @user amount reason
-            //==========================================
-
+            // =========================================
             if (message.Content.StartsWith("!finereign", StringComparison.OrdinalIgnoreCase))
             {
                 if (message.Channel is not SocketGuildChannel guildChannel)
@@ -2088,39 +2083,74 @@ namespace TribeBot.Bot
                     return;
                 }
 
+                // Count ALL previous VR fines (even paid)
+                var allFines = await fineService.GetAllFinesAsync();
+                int previousReignFines = allFines.Count(f =>
+                    f.DiscordUserId == member.DiscordUserId &&
+                    f.FineType == "Reign"
+                );
+
+                bool isRepeatOffense = previousReignFines >= 1;
+
                 await fineService.AddReignFineAsync(member, amount, notes);
+
+                // Officer confirmation message
+                string officerStrikeText = isRepeatOffense
+                    ? "Strikes added: **2** (repeat offense)"
+                    : "No strikes added (first offense)";
 
                 await message.Channel.SendMessageAsync(
                     $"⚔️ **Reign Fine Issued**:\n" +
                     $"User: <@{targetUser.Id}>\n" +
                     $"Amount: **{amount:N0}**\n" +
                     $"Reason: *{notes}*\n" +
-                    $"Strikes added: **2**"
+                    $"{officerStrikeText}"
                 );
 
-                // =========== SEND DM HERE ===========
+                // ==========================
+                // Send DM to user
+                // ==========================
                 try
                 {
                     var user = _client.GetUser(targetUser.Id);
                     if (user != null)
                     {
                         var dm = await user.CreateDMChannelAsync();
-                        await dm.SendMessageAsync(
-                            $"⚠️ **You have received a Reign Fine!**\n\n" +
-                            $"**Amount:** {amount:N0}\n" +
-                            $"**Reason:** {notes}\n" +
-                            $"**Strikes Added:** 2\n\n" +
-                            $"🚫 You are **blacklisted from the next two Reign events**.\n" +
-                            $"Strikes reduce automatically when officers lock Reign.\n\n" +
-                            $"Please pay this fine in <#1440431172160061450>.\n" +
-                            $"Upload your screenshot and the bot will process it."
-                        );
+
+                        if (isRepeatOffense)
+                        {
+                            await dm.SendMessageAsync(
+                                $"⚠️ **You have received another Reign Fine!**\n\n" +
+                                $"**Amount:** {amount:N0}\n" +
+                                $"**Reason:** {notes}\n" +
+                                $"**Strikes Added:** 2\n\n" +
+                                $"🚫 This is a repeat offense — you are **blacklisted from the next two Reign events**.\n" +
+                                $"Strikes reduce automatically when officers lock Reign.\n\n" +
+                                $"Please pay this fine in <#1440431172160061450>."
+                            );
+                        }
+                        else
+                        {
+                            await dm.SendMessageAsync(
+                                $"⚠️ **You have received your first Reign Fine.**\n\n" +
+                                $"**Amount:** {amount:N0}\n" +
+                                $"**Reason:** {notes}\n\n" +
+                                $"No strikes were added for this first offense.\n" +
+                                $"Please avoid future violations to prevent strike penalties.\n\n" +
+                                $"Please pay this fine in <#1440431172160061450>."
+                            );
+                        }
                     }
                 }
-                catch { }
+                catch
+                {
+                    // ignore DM failures
+                }
 
                 return;
             }
+
+
             // ============================
             // !finelist
             // ============================
@@ -2327,7 +2357,8 @@ namespace TribeBot.Bot
 
                 await message.AddReactionAsync(new Emoji("💸"));
                 await message.Channel.SendMessageAsync(
-                    $"💰 {message.Author.Mention} paid **{totalAmount:N0}** toward fines for **{targetMember.IngameName}**.");
+                    $"💰 {message.Author.Mention} **An officer will check shortly and remove the fine if correct** {targetMember.IngameName}, " +
+                    $"Do keep in mind if this was a reign fine, the fine will remain on your profile untill the reign (multiplier strikes) get removed (Every 3 months).");
 
                 return;
             }
@@ -2471,13 +2502,19 @@ namespace TribeBot.Bot
                     return;
                 }
 
-                // weekly donation status
-                int paid = await donationService.GetTotalForUserThisWeekAsync(discordId);
-                int goal = 44_000_000;
-                string donationStatus = member.IsExempt
-                    ? "🟦 EXEMPT"
-                    : (paid >= goal ? $"✅ PAID ({paid:N0} / 44,000,000)"
-                                    : $"❌ UNPAID ({paid:N0} / 44,000,000)");
+                // Determine weekly paid status
+                bool paidThisWeek = false;
+
+                if (!member.IsExempt)
+                {
+                    var totalThisWeek = await donationService.GetTotalForUserThisWeekAsync(discordId);
+                    paidThisWeek = totalThisWeek > 0;
+                }
+
+                string donationStatus =
+                    member.IsExempt ? "🟦 EXEMPT" :
+                    paidThisWeek ? "✅ PAID" :
+                                     "❌ UNPAID";
 
                 string txt =
                     $"🧾 **Your Tribe Profile**\n" +
@@ -2498,9 +2535,11 @@ namespace TribeBot.Bot
                 await SendLongMessageAsync(message.Channel, txt);
                 return;
             }
+
             // ============================
             // !viewinfo @User (OFFICERS ONLY)
             // ============================
+
             if (message.Content.StartsWith("!viewinfo", StringComparison.OrdinalIgnoreCase))
             {
                 if (message.Channel is not SocketGuildChannel viewChan)
@@ -2539,14 +2578,20 @@ namespace TribeBot.Bot
                     return;
                 }
 
-                // BANK
-                int goal = 44_000_000;
-                int paid = await donationService.GetTotalForUserThisWeekAsync(targetId);
-                string donationStatus = m.IsExempt ? "🟦 EXEMPT"
-                                       : paid >= goal ? "✅ PAID"
-                                       : "❌ UNPAID";
+                // Determine weekly donation status
+                bool paidThisWeek = false;
+                if (!m.IsExempt)
+                {
+                    var total = await donationService.GetTotalForUserThisWeekAsync(targetId);
+                    paidThisWeek = total > 0;
+                }
 
-                // FINES
+                string donationStatus =
+                    m.IsExempt ? "🟦 EXEMPT" :
+                    paidThisWeek ? "✅ PAID" :
+                                   "❌ UNPAID";
+
+                // FINES (unchanged)
                 var fines = await fineService.GetFinesForUserAsync(targetId);
                 var unpaid = fines.Where(f => !f.IsPaid).ToList();
                 var paidFines = fines.Where(f => f.IsPaid).ToList();
@@ -2570,6 +2615,7 @@ namespace TribeBot.Bot
                     foreach (var f in paidFines)
                         fineText += $"• {f.Amount:N0} — {f.FineType} — FineID `{f.FineId}`\n";
 
+                // Final officer display
                 string reply =
                     $"📘 **Profile for <@{target.Id}>**\n\n" +
                     $"• **In-game Name:** {m.IngameName}\n" +
@@ -2580,18 +2626,16 @@ namespace TribeBot.Bot
                     $"• **Reign Points:** `{m.ReignPoints}`\n" +
                     $"• **Exempt:** `{m.IsExempt}`\n\n" +
                     $"🏦 **Weekly Donation**\n" +
-                    $"• Paid: **{paid:N0} / 44,000,000**\n" +
-                    $"• Status: {donationStatus}\n" +
+                    $"• Status: **{donationStatus}**\n" +
                     $"• Channel: <#1440050111353721053>\n\n" +
-
                     $"💀 **Fines**\n" +
                     fineText +
-
                     $"\n🕒 **Last Updated:** `{m.LastUpdatedUTC:yyyy-MM-dd HH:mm} UTC`";
 
                 await message.Channel.SendMessageAsync(reply);
                 return;
             }
+
 
             // ============================
             // !help — NEW INTERACTIVE HELP MENU
@@ -3060,7 +3104,7 @@ namespace TribeBot.Bot
             .AddField("!bankunpaid", "Show unpaid members only")
             .AddField("!checkbank", "Check your donation progress")
             .AddField("!payfor", "Pay for someone else")
-            .AddField("Officer Only", "`!bankreminder` `!exempt`, `!unexempt` `!bankreminder`")
+            .AddField("Officer Only", "`!bankreminder` `!exempt`, `!unexempt`")
             .WithColor(Color.Green)
             .Build();
 

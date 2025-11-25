@@ -59,6 +59,18 @@ namespace TribeBot.Services.Services
 
         public async Task AddReignFineAsync(Member member, int amount, string notes)
         {
+            // Load ALL previous Reign fines (paid or unpaid)
+            var allFines = await _dataStore.GetAllFinesAsync();
+
+            int previousReignFines = allFines.Count(f =>
+                f.DiscordUserId == member.DiscordUserId &&
+                f.FineType == "Reign"
+            );
+
+            // First offense = 0 strikes
+            // Second or more = 2 strikes
+            int strikesToAdd = previousReignFines >= 1 ? 2 : 0;
+
             var fine = new FineRecord
             {
                 FineId = Guid.NewGuid().ToString(),
@@ -68,13 +80,14 @@ namespace TribeBot.Services.Services
                 FineType = "Reign",
                 IsPaid = false,
                 PaidAmount = 0,
-                ReignStrikes = 2, // always 2 strikes
+                ReignStrikes = strikesToAdd,
                 Notes = notes,
                 IssuedAtUtc = DateTime.UtcNow
             };
 
             await _dataStore.AddFineAsync(fine);
         }
+
 
         public async Task AddFineAsync(FineRecord fine)
         {
