@@ -2648,10 +2648,18 @@ namespace TribeBot.Bot
                 );
                 return;
             }
-
-
-
             #endregion
+
+            //------------------
+            // FALLBACK (bro i don't speak chinese) 
+            //----------------------
+
+            if (message.Channel is IDMChannel)
+            {
+                await message.Channel.SendMessageAsync(
+                    $"{message.Author.Mention} Please use `!help` to see all available commands, but if you don't understand please message BroGuruKiller for more information");
+            }
+
         }
 
         // ===============================================
@@ -2752,7 +2760,7 @@ namespace TribeBot.Bot
                 var members = await memberService.GetAllMembersAsync();
                 var totals = await donationService.GetTotalsForAllUsersThisWeekAsync();
 
-                int goal = 44_000_000;
+                int goal = 0;
 
                 var unpaid = members
                     .Where(m => !m.IsExempt &&
@@ -2789,7 +2797,7 @@ namespace TribeBot.Bot
                         var dm = await user.CreateDMChannelAsync();
                         await dm.SendMessageAsync(
                             $"🏦 Hello **{m.IngameName}**, this is your weekly donation reminder.\n" +
-                            $"You still need to pay **44,000,000**.\n" +
+                            $"Remember the weekly total to be paid to the bank is 44,000,000**.\n" +
                             $"Please upload your screenshot in <#1440050111353721053>."
                         );
 
