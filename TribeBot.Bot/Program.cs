@@ -904,22 +904,47 @@ namespace TribeBot.Bot
                     return;
                 }
 
-                if (message.MentionedUsers.Count == 0)
+                string args = message.Content.Substring("!removemember".Length).Trim();
+
+                if (string.IsNullOrWhiteSpace(args))
                 {
-                    await message.Channel.SendMessageAsync("Usage: `!removemember @user`");
+                    await message.Channel.SendMessageAsync("Usage: `!removemember @user` or !removemember ingameName`");
                     return;
                 }
 
-                var target = message.MentionedUsers.First();
-                string discordId = target.Id.ToString();
-
+                var memberService = _services.GetService<IMemberService>();
                 var dataStore = _services.GetService<IGoogleSheetsDataStore>();
-                bool success = await dataStore.RemoveMemberByDiscordIdAsync(discordId);
+
+                Member? memberToRemove = null;
+
+                // CASE 1: remove by discord id
+                if (message.MentionedUsers.Count > 0)
+                {
+                    var targetUser = message.MentionedUsers.First();
+                    memberToRemove = await memberService.GetMemberByDiscordIdAsync(targetUser.Id.ToString());
+                }
+                else
+                {
+                    //CASE 2: Remove by ingame name
+                    string ingamename = args;
+                    var allMembers = await memberService.GetAllMembersAsync();
+
+                    memberToRemove = allMembers.FirstOrDefault(m =>
+                    m.IngameName.Equals(ingamename, StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (memberToRemove == null)
+                {
+                    await message.Channel.SendMessageAsync($"❌ No registered member found matching **{args}**.");
+                    return;
+                }
+
+                bool success = await dataStore.RemoveMemberByDiscordIdAsync(memberToRemove.DiscordUserId);
 
                 if (success)
-                    await message.Channel.SendMessageAsync($"✅ Removed **{target.Username}** from the member list.");
+                    await message.Channel.SendMessageAsync($"✅ Removed **{memberToRemove.IngameName}** from the member list.");
                 else
-                    await message.Channel.SendMessageAsync($"❌ Could not find **{target.Username}** in the member list.");
+                    await message.Channel.SendMessageAsync($"❌ Removal failed. Member not found in the sheets.");
 
                 return;
             }
