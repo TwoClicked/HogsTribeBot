@@ -1,6 +1,7 @@
 ﻿using TribeBot.Core.Entities;
 using TribeBot.Data.Interfaces;
-using TribeBot.Services.Interfaces;
+using TribeBot.Core.Interfaces;
+
 
 namespace TribeBot.Services.Services
 {

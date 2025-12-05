@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using TribeBot.Core.Entities;
 
-namespace TribeBot.Services.Interfaces
+namespace TribeBot.Core.Interfaces
 {
     public interface IDonationService
     {

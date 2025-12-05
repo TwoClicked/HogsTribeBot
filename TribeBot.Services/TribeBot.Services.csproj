@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\TribeBot.Core\TribeBot.Core.csproj" />
     <ProjectReference Include="..\TribeBot.Data\TribeBot.Data.csproj" />
   </ItemGroup>
 
