@@ -14,6 +14,10 @@ namespace TribeBot.Core.Flows
 
         private readonly IMemberService _memberService;
         private readonly IUserFlowManager _flowManager;
+        private readonly DiscordSocketClient _client;
+
+        // Announcement channel
+        private readonly ulong _announcementChannelId = 1446455618062909651;
 
         private enum Step
         {
@@ -36,11 +40,13 @@ namespace TribeBot.Core.Flows
         public RegistrationFlow(
             ulong userId,
             IMemberService memberService,
-            IUserFlowManager flowManager)
+            IUserFlowManager flowManager,
+            DiscordSocketClient client)
         {
             UserId = userId;
             _memberService = memberService;
             _flowManager = flowManager;
+            _client = client;
         }
 
         // =====================================================
@@ -120,7 +126,7 @@ namespace TribeBot.Core.Flows
             _id = input;
             _step = Step.AskMight;
 
-            await message.Channel.SendMessageAsync("Enter your **Might** (0–3,000,000,000):");
+            await message.Channel.SendMessageAsync("Enter your **Might** (0–3000000000):");
             return true;
         }
 
@@ -128,14 +134,14 @@ namespace TribeBot.Core.Flows
         {
             if (!long.TryParse(input, out long might) || might < 0 || might > 3_000_000_000)
             {
-                await message.Channel.SendMessageAsync("❌ Invalid Might. Must be 0–3,000,000,000.");
+                await message.Channel.SendMessageAsync("❌ Invalid Might. Must be 0–3000000000.");
                 return true;
             }
 
             _might = (int)might;
             _step = Step.AskKills;
 
-            await message.Channel.SendMessageAsync("Enter your **Kill Points** (0–500,000,000,000):");
+            await message.Channel.SendMessageAsync("Enter your **Kill Points** (0–500000000000):");
             return true;
         }
 
@@ -189,6 +195,24 @@ namespace TribeBot.Core.Flows
                 await _memberService.RegisterOrUpdateAsync(member);
 
                 await message.Channel.SendMessageAsync("🎉 **Registration complete!**");
+
+                // =============================
+                // ANNOUNCEMENT CHANNEL MESSAGE
+                // =============================
+                var announcementChannel = _client.GetChannel(_announcementChannelId) as IMessageChannel;
+                if (announcementChannel != null)
+                {
+                    await announcementChannel.SendMessageAsync(
+                        $"📢 **New Member Registered!**\n" +
+                        $"**Name:** {_name}\n" +
+                        $"**ID:** {_id}\n" +
+                        $"**Might:** {_might:N0}\n" +
+                        $"**Kill Points:** {_kills:N0}\n" +
+                        $"**Collector Level:** {_collector}\n" +
+                        $"Welcome to the tribe! 🎉"
+                    );
+                }
+
                 _flowManager.EndFlow(UserId);
                 return true;
             }
@@ -212,7 +236,6 @@ namespace TribeBot.Core.Flows
         {
             if (_step == Step.AskName)
             {
-                // Option 3 — back from first step cancels the flow
                 await message.Channel.SendMessageAsync("❌ Registration cancelled.");
                 _flowManager.EndFlow(UserId);
                 return;

@@ -21,7 +21,7 @@ namespace TribeBot.Bot.UI
             .Build();
 
         public static Embed Update() => new EmbedBuilder()
-            .WithTitle("✏️ Update Commands")
+            .WithTitle("✏️ Update Commands (After the command make sure to add the value)")
             .AddField("!updateigname", "Update in-game name")
             .AddField("!updateid", "Update in-game ID")
             .AddField("!updatemight", "Update Might")
@@ -41,7 +41,6 @@ namespace TribeBot.Bot.UI
 
         public static Embed Bank() => new EmbedBuilder()
             .WithTitle("💰 Bank Commands")
-            .AddField("!banktaxlist", "Show paid/unpaid members")
             .AddField("!bankunpaid", "Show unpaid members")
             .AddField("!checkbank", "Check your donation progress")
             .AddField("!payfor", "Pay for someone else")

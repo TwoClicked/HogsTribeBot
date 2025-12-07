@@ -42,28 +42,24 @@ namespace TribeBot.Services.Services
         }
 
         // ---------------------------
-        // VOTES
+        // Singular Vote adjustment (Remove or add) 
         // ---------------------------
         public async Task AddOrUpdateVoteAsync(PollVoteRecord vote)
         {
-            var existingVotes = await _dataStore.GetVotesForPollAsync(vote.PollId);
 
-            // If user already voted → remove old vote (overwrite)
-            var oldVote = existingVotes.FirstOrDefault(v => v.DiscordUserId == vote.DiscordUserId);
+            // Check if user already voted (One single read)
+            var oldVote = await _dataStore.GetVoteAsync(vote.PollId, vote.DiscordUserId);
+
             if (oldVote != null)
             {
-                // Remove old vote row
-                await _dataStore.RemoveVotesForPollAsync(vote.PollId);
-
-                // Re-add all EXCEPT the old vote
-                foreach (var v in existingVotes.Where(v => v.DiscordUserId != vote.DiscordUserId))
-                {
-                    await _dataStore.AddPollVoteAsync(v);
-                }
+                // Remove only one row (No read needed) 
+                await _dataStore.RemoveVoteAsync(vote.PollId, vote.DiscordUserId);
             }
 
-            // Add new / updated vote
+            // Insert new vote (No read needed) 
             await _dataStore.AddPollVoteAsync(vote);
+
+
         }
 
         public async Task<bool> HasUserVotedAsync(string pollId, string discordUserId)

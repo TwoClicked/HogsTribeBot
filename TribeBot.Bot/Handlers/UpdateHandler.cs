@@ -135,7 +135,7 @@ namespace TribeBot.Bot.Handlers
 
             if (!long.TryParse(input, out long might) || might < 0 || might > 3000000000)
             {
-                await message.Channel.SendMessageAsync("❌ Invalid Might. Must be between 0 and 3B.");
+                await message.Channel.SendMessageAsync("❌ Invalid Might. Must be between 0 and 3000000000.");
                 return;
             }
 

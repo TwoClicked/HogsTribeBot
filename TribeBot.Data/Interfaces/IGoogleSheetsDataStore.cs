@@ -45,5 +45,8 @@ namespace TribeBot.Data.Interfaces
         Task<List<PollVoteRecord>> GetVotesForPollAsync(string pollId);
         Task RemoveVotesForPollAsync(string pollId);
 
+        Task RemoveVoteAsync(string pollId, string discordUserId);
+        Task<PollVoteRecord> GetVoteAsync(string pollId, string discordUserId);
+
     }
 }

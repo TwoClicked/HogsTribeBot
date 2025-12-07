@@ -67,7 +67,7 @@ namespace TribeBot.Bot.Handlers
                 var dm = await message.Author.CreateDMChannelAsync();
                 await dm.SendMessageAsync(
                     "👋 Let's get you registered!\n" +
-                    "Enter your **In-game name** (type `cancel` to stop at any time).");
+                    "Enter your **In-game name** (type `cancel` to stop at any time or type `back` to return to a previous question).");
             }
             catch
             {
@@ -76,7 +76,7 @@ namespace TribeBot.Bot.Handlers
             }
 
             // Start flow
-            var newFlow = new RegistrationFlow(userId, _memberService, _flowManager);
+            var newFlow = new RegistrationFlow(userId, _memberService, _flowManager,_client);
             _flowManager.StartFlow(userId, newFlow);
 
             return true;

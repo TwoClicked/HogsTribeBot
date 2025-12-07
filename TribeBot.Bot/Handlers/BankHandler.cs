@@ -52,11 +52,6 @@ namespace TribeBot.Bot.Handlers
             string content = message.Content.Trim();
 
             // BANK COMMANDS
-            if (content.Equals("!banktaxlist", StringComparison.OrdinalIgnoreCase))
-            {
-                await ShowBankTaxList(message);
-                return true;
-            }
 
             if (content.Equals("!bankunpaid", StringComparison.OrdinalIgnoreCase))
             {
@@ -90,35 +85,6 @@ namespace TribeBot.Bot.Handlers
             }
 
             return false;
-        }
-
-        // ===================================================================
-        // !BANKTAXLIST
-        // ===================================================================
-
-        private async Task ShowBankTaxList(SocketMessage message)
-        {
-            var memberService = _memberService;
-            var donationService = _donationService;
-
-            var members = await memberService.GetAllMembersAsync();
-            var totals = await donationService.GetTotalsForAllUsersThisWeekAsync();
-
-            int goal = 44_000_000;
-            string response = "🏦 **Bank Tax List (This Week)**\n\n";
-
-            foreach (var m in members.OrderBy(m => m.IngameName))
-            {
-                totals.TryGetValue(m.DiscordUserId, out int paid);
-
-                string status =
-                    m.IsExempt ? "🟦 EXEMPT" :
-                    paid >= goal ? "✅ PAID" : "❌ UNPAID";
-
-                response += $"**{m.IngameName}** — {status}\n";
-            }
-
-            await message.Channel.SendMessageAsync(response);
         }
 
         // ===================================================================
@@ -239,8 +205,9 @@ namespace TribeBot.Bot.Handlers
                 {
                     var dm = await user.CreateDMChannelAsync();
                     await dm.SendMessageAsync(
-                        $"🏦 Hello **{m.IngameName}**, this is your weekly donation reminder.\n" +
-                        $"Your donation is required in <#{DonationChannelId}>.");
+                        $"🏦 Hello **{m.IngameName}**, this is your weekly bank donation reminder.\n" +
+                        $"Your donation is required in <#{DonationChannelId}>.\n" +
+                        $"You have untill 1 hour before the weekly reset, keep in mind, you will be removed if this is not brought in order.");
 
                     sent++;
                     await Task.Delay(1200);
@@ -415,7 +382,7 @@ namespace TribeBot.Bot.Handlers
 
             await message.AddReactionAsync(new Emoji("✅"));
             await message.Channel.SendMessageAsync(
-                $"{message.Author.Mention} **Your donation of {total:N0} has been recorded for {targetMember.IngameName}.**");
+                $"{message.Author.Mention} ** ✅ Your payment has been recorded.**");
         }
 
         // ===================================================================

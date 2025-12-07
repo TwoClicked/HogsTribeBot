@@ -354,9 +354,9 @@ namespace TribeBot.Data.GoogleSheets
             var list = new List<FineRecord>();
             if (rows == null) return list;
 
-            foreach ( var row in rows )
+            foreach (var row in rows)
             {
-                if (row.Count < 10 ) continue;
+                if (row.Count < 10) continue;
 
                 list.Add(new FineRecord
                 {
@@ -444,7 +444,7 @@ namespace TribeBot.Data.GoogleSheets
 
         // AddPoll
 
-        public async Task AddPollAsync(PollRecord poll) 
+        public async Task AddPollAsync(PollRecord poll)
         {
 
             var values = new List<object>
@@ -591,46 +591,137 @@ namespace TribeBot.Data.GoogleSheets
 
         public async Task RemoveVotesForPollAsync(string pollId)
         {
-            var votes = await GetVotesForPollAsync(pollId);
-            if (votes.Count == 0) return;
 
-            // Load entire sheet range
+            //Load all rows 
             var request = _sheetsService.Spreadsheets.Values.Get(
                 _spreadsheetId,
                 $"{PollVotesSheet}!A2:E");
 
             var response = await request.ExecuteAsync();
-            if (response.Values == null)
-                return;
+            if (response.Values == null) return;
 
-            int rowIndex = 2;
+            var rows = response.Values;
+            var deleteRequests = new List<Google.Apis.Sheets.v4.Data.Request>();
+
+            int rowIndex = 2; // Sheet row number (Header is row 1)
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+
+                if (row.Count > 0 && row[0].ToString() == pollId)
+                {
+                    deleteRequests.Add(new Google.Apis.Sheets.v4.Data.Request
+                    {
+                        DeleteDimension = new Google.Apis.Sheets.v4.Data.DeleteDimensionRequest
+                        {
+                            Range = new Google.Apis.Sheets.v4.Data.DimensionRange
+                            {
+                                SheetId = PollVotesSheetId,
+                                Dimension = "ROWS",
+                                StartIndex = rowIndex - 1, //Inclusive
+                                EndIndex = rowIndex //Exclusive
+                            }
+                        }
+                    });
+                }
+                rowIndex++;
+            }
+
+            if(deleteRequests.Count == 0)
+            {
+                return; 
+            }
+
+            // reverse order > delete bottom up 
+            deleteRequests.Reverse();
+
+            var batch = new Google.Apis.Sheets.v4.Data.BatchUpdateSpreadsheetRequest
+            {
+                Requests = deleteRequests
+            };
+
+            await _sheetsService.Spreadsheets.BatchUpdate(batch, _spreadsheetId).ExecuteAsync();
+        }
+
+        //Only do one read not whole list when calling votes
+
+        public async Task<PollVoteRecord?> GetVoteAsync(string pollId, string discordUserId)
+        {
+
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{PollVotesSheet}!A2:E");
+
+            var response = await request.ExecuteAsync();
+            if (response.Values == null) return null;
+
+            int rowIndex = 2; // sheet row number (account for header)
 
             foreach (var row in response.Values)
             {
-                if (row.Count < 1) continue;
-
-                if (row[0].ToString() == pollId)
+                if (row.Count >= 2 &&
+                    row[0].ToString() == pollId &&
+                    row[1].ToString() == discordUserId)
                 {
+                    return new PollVoteRecord
+                    {
+                        PollId = row[0].ToString(),
+                        DiscordUserId = row[1].ToString(),
+                        IngameName = row[2].ToString(),
+                        Choice = row[3].ToString(),
+                        TimestampUtc = DateTime.Parse(row[4].ToString()),
+                    };
+                }
+            }
+
+            return null;
+        }
+
+
+        // Remove vote for user
+        public async Task RemoveVoteAsync(string pollId, string discordUserId)
+        {
+            // Load vote rows (Don't include the header) 
+
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{PollVotesSheet}!A2:E");
+
+            var response = await request.ExecuteAsync();
+            if (response.Values == null) return;
+
+            int rowIndex = 2; // sheet row number (account for header)
+
+            foreach (var row in response.Values)
+            {
+                if (row.Count >= 2 &&
+                    row[0].ToString() == pollId &&
+                    row[1].ToString() == discordUserId)
+                {
+                    // Found the row > Delete only this exact row (The current vote thats being overwritten) 
+
                     var delete = new Google.Apis.Sheets.v4.Data.DeleteDimensionRequest
                     {
                         Range = new Google.Apis.Sheets.v4.Data.DimensionRange
                         {
                             SheetId = PollVotesSheetId,
                             Dimension = "ROWS",
-                            StartIndex = rowIndex - 1,
-                            EndIndex = rowIndex
+                            StartIndex = rowIndex - 1, //Inclusive
+                            EndIndex = rowIndex //Exclusive
                         }
                     };
 
                     var batch = new Google.Apis.Sheets.v4.Data.BatchUpdateSpreadsheetRequest
                     {
                         Requests = new List<Google.Apis.Sheets.v4.Data.Request>
-                {
-                    new Google.Apis.Sheets.v4.Data.Request { DeleteDimension = delete }
-                }
+                        {
+                            new Google.Apis.Sheets.v4.Data.Request { DeleteDimension = delete }
+                        }
                     };
 
                     await _sheetsService.Spreadsheets.BatchUpdate(batch, _spreadsheetId).ExecuteAsync();
+                    return;
                 }
 
                 rowIndex++;

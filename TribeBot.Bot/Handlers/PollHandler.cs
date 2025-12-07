@@ -18,7 +18,7 @@ namespace TribeBot.Bot.Handlers
         // CONFIG
         private const ulong OfficerRoleId = 1222665812775534592;
         private const ulong GuildId = 1109193500664287336;
-        private const ulong PromotionRoleId = 1439972286877794314; // HOGS role for DM sending
+        private const ulong HogsRole = 1439972286877794314; // HOGS role for DM sending
         private const ulong OfficerLogChannelId = 1440209811621937273;
 
         public PollHandler(
@@ -147,7 +147,7 @@ namespace TribeBot.Bot.Handlers
         private async Task SendDMBallots(PollRecord poll)
         {
             var guild = _client.GetGuild(GuildId);
-            var role = guild.GetRole(PromotionRoleId);
+            var role = guild.GetRole(HogsRole);
 
             var members = await _memberService.GetAllMembersAsync();
             var validIds = members.Select(m => m.DiscordUserId).ToHashSet();
