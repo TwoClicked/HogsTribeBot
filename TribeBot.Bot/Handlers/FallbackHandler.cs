@@ -13,25 +13,43 @@ namespace TribeBot.Bot.Handlers
             _client = client;
         }
 
+        // ============================================================
+        // Local Embed Builder (same as other handlers)
+        // ============================================================
+        private Embed BuildEmbed(string title, string desc, Color color)
+        {
+            return new EmbedBuilder()
+                .WithTitle(title)
+                .WithDescription(desc)
+                .WithColor(color)
+                .WithFooter($"{System.DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
+                .Build();
+        }
+
+        private Task SendInfo(SocketMessage msg, string title, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed($"🛡️ {title}", text, Color.Blue));
+
+
         /// <summary>
         /// Called ONLY if no other handler consumed the message.
         /// </summary>
         public async Task HandleAsync(SocketMessage message)
         {
-            // Ignore bot messages
             if (message.Author.IsBot)
                 return;
 
             // Only respond to DM fallback messages
             if (message.Channel is IDMChannel)
             {
-                await message.Channel.SendMessageAsync(
-                    $"{message.Author.Mention} I didn’t understand that.\n" +
+                string info =
+                    $"{message.Author.Mention}, I didn’t understand that.\n\n" +
                     "Use **!help** to see all available commands.\n" +
-                    "If you still need assistance, message BroGuruKiller, Discord tag guru94vt. 🐗");
+                    "If you still need assistance, please reach out to **BroGuruKiller** (Discord: `guru94vt`). 🐗";
+
+                await SendInfo(message, "Unrecognized Command", info);
             }
 
-            // If it's a guild channel: ignore silently
+            // Guild channel fallback = silent ignore
         }
     }
 }

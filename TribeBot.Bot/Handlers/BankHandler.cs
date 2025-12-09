@@ -16,14 +16,14 @@ namespace TribeBot.Bot.Handlers
         private readonly PaddleOcrServerService _ocrService;
         private readonly IGoogleSheetsDataStore _dataStore;
 
-        // PAYFOR override stored per user
         private readonly Dictionary<ulong, string> _payForOverride = new();
 
-        // CONFIG: channel / role IDs
         private const ulong DonationChannelId = 1440050111353721053;
         private const ulong FinePaymentChannelId = 1440431172160061450;
         private const ulong OfficerRoleId = 1222665812775534592;
         private const ulong GuildId = 1109193500664287336;
+
+        private const ulong OfficerLogChannelId = 1440211043820507217;
 
         public BankHandler(
             DiscordSocketClient client,
@@ -42,42 +42,81 @@ namespace TribeBot.Bot.Handlers
         }
 
         // ===================================================================
-        // ROOT ENTRY — called from Program.cs
+        // EMBED HELPERS (local to this handler)
+        // ===================================================================
+
+        private Embed BuildEmbed(string title, string desc, Color color)
+        {
+            return new EmbedBuilder()
+                .WithTitle(title)
+                .WithDescription(desc)
+                .WithColor(color)
+                .WithFooter($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
+                .Build();
+        }
+
+        private Task SendSuccess(SocketMessage msg, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed("🟢 Success", text, Color.Green));
+
+        private Task SendError(SocketMessage msg, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed("❌ Error", text, Color.Red));
+
+        private Task SendWarning(SocketMessage msg, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed("⚠️ Warning", text, Color.Orange));
+
+        private Task SendInfo(SocketMessage msg, string title, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed($"🛡️ {title}", text, Color.Blue));
+
+        private IMessageChannel OfficerLog =>
+            _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
+
+        private Task SendLog(string title, Dictionary<string, string> fields)
+        {
+            var eb = new EmbedBuilder()
+                .WithTitle($"📘 {title}")
+                .WithColor(new Color(0, 110, 255))
+                .WithFooter($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
+
+            foreach (var kvp in fields)
+                eb.AddField(kvp.Key, kvp.Value, true);
+
+            return OfficerLog?.SendMessageAsync(embed: eb.Build()) ?? Task.CompletedTask;
+        }
+
+        // ===================================================================
+        // ROOT ENTRY
         // ===================================================================
         public async Task<bool> TryHandleAsync(SocketMessage message)
         {
             if (message.Author.IsBot)
                 return false;
 
-            string content = message.Content.Trim();
+            string content = message.Content.Trim().ToLower();
 
-            // BANK COMMANDS
-
-            if (content.Equals("!bankunpaid", StringComparison.OrdinalIgnoreCase))
+            if (content.Equals("!bankunpaid"))
             {
                 await ShowUnpaid(message);
                 return true;
             }
 
-            if (content.Equals("!checkbank", StringComparison.OrdinalIgnoreCase))
+            if (content.Equals("!checkbank"))
             {
                 await CheckUserDonation(message);
                 return true;
             }
 
-            if (content.Equals("!bankreminder", StringComparison.OrdinalIgnoreCase))
+            if (content.Equals("!bankreminder"))
             {
                 await SendBankReminder(message);
                 return true;
             }
 
-            if (content.StartsWith("!payfor", StringComparison.OrdinalIgnoreCase))
+            if (content.StartsWith("!payfor"))
             {
                 await HandlePayFor(message);
                 return true;
             }
 
-            // OCR donation handling (Donation channel only)
             if (message.Channel.Id == DonationChannelId && message.Attachments.Any())
             {
                 await HandleDonationUpload(message);
@@ -90,7 +129,6 @@ namespace TribeBot.Bot.Handlers
         // ===================================================================
         // !BANKUNPAID
         // ===================================================================
-
         private async Task ShowUnpaid(SocketMessage message)
         {
             var members = await _memberService.GetAllMembersAsync();
@@ -98,26 +136,27 @@ namespace TribeBot.Bot.Handlers
 
             var unpaid = members
                 .Where(m => !m.IsExempt &&
-                            (!totals.ContainsKey(m.DiscordUserId) || totals[m.DiscordUserId] <= 0))
+                           (!totals.ContainsKey(m.DiscordUserId) ||
+                            totals[m.DiscordUserId] <= 0))
                 .ToList();
 
             if (unpaid.Count == 0)
             {
-                await message.Channel.SendMessageAsync("🎉 Everyone has paid (or is exempt)!");
+                await SendSuccess(message, "🎉 Everyone has paid or is exempt!");
                 return;
             }
 
-            string msg = "❌ **Unpaid Members (This Week)**\n\n";
-            foreach (var m in unpaid)
-                msg += $"• **{m.IngameName}**\n";
+            string list = string.Join("\n", unpaid.Select(u => $"• **{u.IngameName}**"));
 
-            await message.Channel.SendMessageAsync(msg);
+            await SendWarning(
+                message,
+                $"❌ **Unpaid Members (This Week)**\n\n{list}"
+            );
         }
 
         // ===================================================================
         // !CHECKBANK
         // ===================================================================
-
         private async Task CheckUserDonation(SocketMessage message)
         {
             string discordId = message.Author.Id.ToString();
@@ -125,13 +164,13 @@ namespace TribeBot.Bot.Handlers
 
             if (member == null)
             {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} You are not registered. Use `!register`.");
+                await SendError(message, "You are not registered. Use `!register`.");
                 return;
             }
 
             if (member.IsExempt)
             {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} 🟦 You are exempt from this week's donation.");
+                await SendInfo(message, "Bank Status", "🟦 You are exempt from this week's donation.");
                 return;
             }
 
@@ -139,37 +178,31 @@ namespace TribeBot.Bot.Handlers
 
             if (total > 0)
             {
-                await message.Channel.SendMessageAsync(
-                    $"{message.Author.Mention} 🎉 **You have paid your weekly donation!**");
+                await SendSuccess(message, "🎉 You have paid your weekly donation!");
             }
             else
             {
-                await message.Channel.SendMessageAsync(
-                    $"{message.Author.Mention} ❌ **You have NOT paid your weekly donation.**\n" +
-                    $"Please upload your screenshot in <#{DonationChannelId}>.");
+                await SendError(
+                    message,
+                    $"You have **NOT** paid your weekly donation.\nPlease upload your screenshot in <#{DonationChannelId}>."
+                );
             }
         }
 
         // ===================================================================
-        // !BANKREMINDER (OFFICER ONLY)
+        // !BANKREMINDER
         // ===================================================================
-
         private async Task SendBankReminder(SocketMessage message)
         {
             if (!IsOfficer(message))
                 return;
 
-            if (message.Channel is not SocketGuildChannel guildChannel)
-            {
-                await message.Channel.SendMessageAsync("This command must be used inside the server.");
-                return;
-            }
-
-            await message.Channel.SendMessageAsync("🏦 Sending bank reminders in the background…");
+            await SendInfo(message, "Bank Reminder", "🏦 Sending bank reminders in the background…");
 
             _ = Task.Run(async () =>
             {
-                await SendBankReminderBackground(guildChannel);
+                if (message.Channel is SocketGuildChannel gc)
+                    await SendBankReminderBackground(gc);
             });
         }
 
@@ -181,11 +214,9 @@ namespace TribeBot.Bot.Handlers
 
             var unpaid = members
                 .Where(m => !m.IsExempt &&
-                            (!totals.ContainsKey(m.DiscordUserId) ||
-                             totals[m.DiscordUserId] <= 0))
+                           (!totals.ContainsKey(m.DiscordUserId) ||
+                            totals[m.DiscordUserId] <= 0))
                 .ToList();
-
-            var log = GetOfficerLog();
 
             int sent = 0;
             List<ulong> failed = new();
@@ -204,10 +235,12 @@ namespace TribeBot.Bot.Handlers
                 try
                 {
                     var dm = await user.CreateDMChannelAsync();
+
                     await dm.SendMessageAsync(
                         $"🏦 Hello **{m.IngameName}**, this is your weekly bank donation reminder.\n" +
                         $"Your donation is required in <#{DonationChannelId}>.\n" +
-                        $"You have untill 1 hour before the weekly reset, keep in mind, you will be removed if this is not brought in order.");
+                        $"You have until 1 hour before weekly reset — failure may result in removal."
+                    );
 
                     sent++;
                     await Task.Delay(1200);
@@ -216,25 +249,34 @@ namespace TribeBot.Bot.Handlers
                 {
                     failed.Add(userId);
 
-                    if (log != null)
-                        await log.SendMessageAsync($"⚠️ Could not DM <@{userId}>.");
+                    await SendLog("Bank Reminder DM Failure", new()
+                    {
+                        { "User", userId.ToString() }
+                    });
                 }
             }
 
-            string result =
-                $"📩 **Bank Reminder Summary**\n\n" +
-                $"• Unpaid: **{unpaid.Count}**\n" +
-                $"• DMs sent: **{sent}**\n" +
-                $"• Failed: **{failed.Count}**";
+            var channel = guildChannel as IMessageChannel;
 
-            (await _client.GetChannelAsync(guildChannel.Id) as IMessageChannel)
-                ?.SendMessageAsync(result);
+            if (channel != null)
+            {
+                await channel.SendMessageAsync(
+                    embed: BuildEmbed(
+                        "📩 Bank Reminder Summary",
+                        $"• Unpaid: **{unpaid.Count}**\n" +
+                        $"• DMs Sent: **{sent}**\n" +
+                        $"• Failed: **{failed.Count}**",
+                        Color.Blue
+                    )
+                );
+            }
+
+
         }
 
         // ===================================================================
         // !PAYFOR
         // ===================================================================
-
         private async Task HandlePayFor(SocketMessage message)
         {
             ulong userId = message.Author.Id;
@@ -243,17 +285,17 @@ namespace TribeBot.Bot.Handlers
             if (message.Channel.Id != DonationChannelId &&
                 message.Channel.Id != FinePaymentChannelId)
             {
-                await message.Channel.SendMessageAsync("❌ `!payfor` can only be used in donation or fine payment channels.");
+                await SendError(message, "`!payfor` can only be used in donation or fine payment channels.");
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(args))
             {
-                await message.Channel.SendMessageAsync("Usage:\n`!payfor <IngameName>`\n`!payfor @DiscordUser`");
+                await SendWarning(message, "Usage:\n`!payfor <IngameName>`\n`!payfor @DiscordUser`");
                 return;
             }
 
-            // CASE 1 — paying for @user
+            // Payfor @mention
             if (message.MentionedUsers.Any())
             {
                 var target = message.MentionedUsers.First();
@@ -262,16 +304,17 @@ namespace TribeBot.Bot.Handlers
                 var member = await _memberService.GetMemberByDiscordIdAsync(targetId);
                 if (member == null)
                 {
-                    await message.Channel.SendMessageAsync($"❌ <@{target.Id}> is not registered.");
+                    await SendError(message, $"{target.Username} is not registered.");
                     return;
                 }
 
                 _payForOverride[userId] = $"DISCORD:{targetId}";
-                await message.Channel.SendMessageAsync($"💰 Your next upload will count for **<@{target.Id}>**.");
+
+                await SendSuccess(message, $"Your next upload will count for **{target.Username}**.");
                 return;
             }
 
-            // CASE 2 — paying for ingame name
+            // Payfor by ingame name
             var allMembers = await _memberService.GetAllMembersAsync();
             var matches = allMembers
                 .Where(m => m.IngameName.Equals(args, StringComparison.OrdinalIgnoreCase))
@@ -279,45 +322,43 @@ namespace TribeBot.Bot.Handlers
 
             if (matches.Count == 0)
             {
-                await message.Channel.SendMessageAsync($"❌ No registered member found named **{args}**.");
+                await SendError(message, $"No registered member found named **{args}**.");
                 return;
             }
 
             if (matches.Count > 1)
             {
-                await message.Channel.SendMessageAsync($"⚠ Multiple members named **{args}**. Use @mention instead.");
+                await SendWarning(message, $"Multiple members found with name **{args}**. Use @mention instead.");
                 return;
             }
 
             _payForOverride[userId] = $"NAME:{args}";
-            await message.Channel.SendMessageAsync($"💰 Your next upload will count for **{args}**.");
-        }
 
+            await SendSuccess(message, $"Your next upload will count for **{args}**.");
+        }
 
         // ===================================================================
         // OCR DONATION HANDLING
         // ===================================================================
-
         private async Task HandleDonationUpload(SocketMessage message)
         {
             string uploaderId = message.Author.Id.ToString();
 
-            // Determine final donation target
             string targetDiscordId = uploaderId;
-            string targetNameOverride = null;
+            string? targetNameOverride = null;
 
             if (_payForOverride.TryGetValue(message.Author.Id, out string overrideValue))
             {
                 if (overrideValue.StartsWith("DISCORD:"))
-                    targetDiscordId = overrideValue.Substring("DISCORD:".Length);
-
+                    targetDiscordId = overrideValue["DISCORD:".Length..];
                 else if (overrideValue.StartsWith("NAME:"))
-                    targetNameOverride = overrideValue.Substring("NAME:".Length);
+                    targetNameOverride = overrideValue["NAME:".Length..];
 
                 _payForOverride.Remove(message.Author.Id);
             }
 
-            Member targetMember;
+            Member? targetMember;
+
             if (targetNameOverride != null)
             {
                 var all = await _memberService.GetAllMembersAsync();
@@ -331,7 +372,7 @@ namespace TribeBot.Bot.Handlers
 
             if (targetMember == null)
             {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} ❌ Target user not found.");
+                await SendError(message, "Target member was not found.");
                 return;
             }
 
@@ -339,7 +380,8 @@ namespace TribeBot.Bot.Handlers
 
             foreach (var attachment in message.Attachments)
             {
-                if (attachment.ContentType == null || !attachment.ContentType.StartsWith("image"))
+                if (attachment.ContentType == null ||
+                    !attachment.ContentType.StartsWith("image"))
                     continue;
 
                 string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.png");
@@ -360,7 +402,7 @@ namespace TribeBot.Bot.Handlers
             if (total <= 0)
             {
                 await message.AddReactionAsync(new Emoji("❌"));
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} I could not read any donation amount.");
+                await SendError(message, "I could not read any donation amount.");
                 return;
             }
 
@@ -381,35 +423,29 @@ namespace TribeBot.Bot.Handlers
             });
 
             await message.AddReactionAsync(new Emoji("✅"));
-            await message.Channel.SendMessageAsync(
-                $"{message.Author.Mention} ** ✅ Your payment has been recorded.**");
+            await SendSuccess(message, "Your donation has been recorded.");
         }
 
         // ===================================================================
-        // HELPER: CHECK OFFICER ROLE
+        // HELPERS
         // ===================================================================
-
         private bool IsOfficer(SocketMessage message)
         {
             if (message.Channel is not SocketGuildChannel gc)
             {
-                message.Channel.SendMessageAsync("❌ You must use this inside the server.");
+                _ = SendError(message, "This command must be used inside the server.");
                 return false;
             }
 
             var user = gc.GetUser(message.Author.Id);
+
             if (user == null || !user.Roles.Any(r => r.Id == OfficerRoleId))
             {
-                message.Channel.SendMessageAsync($"{message.Author.Mention} ❌ You do not have permission.");
+                _ = SendError(message, "You do not have permission to use this command.");
                 return false;
             }
 
             return true;
-        }
-
-        private IMessageChannel GetOfficerLog()
-        {
-            return _client.GetChannel(1440209811621937273) as IMessageChannel;
         }
     }
 }

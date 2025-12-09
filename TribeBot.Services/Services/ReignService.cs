@@ -32,10 +32,8 @@ namespace TribeBot.Services.Services
             if (member == null)
                 throw new Exception("User is not registered.");
 
-            // Load existing reign applications
             var existing = await _dataStore.GetAllReignRegistrationsAsync();
 
-            // Already applied?
             if (existing.Any(r => r.DiscordUserId == discordUserId))
                 throw new Exception("You already applied — no need to do it again!");
 
@@ -47,6 +45,29 @@ namespace TribeBot.Services.Services
             };
 
             await _dataStore.AddReignRegistrationAsync(reg);
+        }
+
+        // ============================================================
+        // REMOVE FROM REIGN  (NEW)
+        // ============================================================
+
+        public async Task<bool> RemoveMemberFromReignAsync(string discordUserId)
+        {
+            // Load current registrations
+            var registrations = await _dataStore.GetAllReignRegistrationsAsync();
+
+            // Find matching entry
+            var match = registrations.FirstOrDefault(r => r.DiscordUserId == discordUserId);
+            if (match == null)
+                return false;
+
+            // Remove it in memory
+            registrations.Remove(match);
+
+            // Write updated list back to Google Sheets
+            await _dataStore.SetReignRegistrationsAsync(registrations);
+
+            return true;
         }
 
         // ============================================================
@@ -78,18 +99,16 @@ namespace TribeBot.Services.Services
         }
 
         // ============================================================
-        // REIGN LOCK STATE — Option B (Always READ from Google Sheets)
+        // REIGN LOCK STATE
         // ============================================================
 
         public Task<bool> GetReignLockedAsync()
         {
-            // Always read live state from Google Sheets
             return _dataStore.GetReignLockedAsync();
         }
 
         public Task SetReignLockedAsync(bool locked)
         {
-            // Save to Google Sheets (no caching)
             return _dataStore.SetReignLockedAsync(locked);
         }
     }

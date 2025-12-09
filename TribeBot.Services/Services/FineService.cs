@@ -146,5 +146,11 @@ namespace TribeBot.Services.Services
                 await _dataStore.UpdateFineAsync(fine);
             }
         }
+
+        public async Task UpdateFineAsync(FineRecord fine)
+        {
+            await _dataStore.UpdateFineAsync(fine);
+        }
+
     }
 }

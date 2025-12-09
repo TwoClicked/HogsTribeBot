@@ -19,28 +19,58 @@ namespace TribeBot.Bot.Handlers
             _client.InteractionCreated += HandleInteractionAsync;
         }
 
-        // =========================================================================
+        // ============================================================
+        // LOCAL EMBED HELPERS (Style-2)
+        // ============================================================
+        private Embed BuildEmbed(string title, string desc, Color color)
+        {
+            return new EmbedBuilder()
+                .WithTitle(title)
+                .WithDescription(desc)
+                .WithColor(color)
+                .WithFooter($"{System.DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
+                .Build();
+        }
+
+        private Task SendError(SocketMessage msg, string text)
+            => msg.Channel.SendMessageAsync(embed:
+                BuildEmbed("❌ Error", text, Color.Red));
+
+
+        // ============================================================
         // MAIN COMMAND
-        // =========================================================================
+        // ============================================================
         public async Task<bool> TryHandleAsync(SocketMessage message)
         {
             if (message.Author.IsBot)
                 return false;
 
-            if (!message.Content.Equals("!help", System.StringComparison.OrdinalIgnoreCase))
+            string content = message.Content.Trim().ToLower();
+
+            if (!content.StartsWith("!help"))
                 return false;
 
-            await message.Channel.SendMessageAsync(
-                embed: HelpEmbeds.General(),
-                components: HelpComponents.Build("general").Build()
-            );
+            // EXACT command: !help → show menu
+            if (content == "!help")
+            {
+                await message.Channel.SendMessageAsync(
+                    embed: HelpEmbeds.General(),
+                    components: HelpComponents.Build("general").Build()
+                );
+                return true;
+            }
+
+            // Anything ELSE → invalid help command
+            await SendError(message,
+                "Unknown help option.\nUse **`!help`** to open the help menu.");
 
             return true;
         }
 
-        // =========================================================================
-        // INTERACTION HANDLER
-        // =========================================================================
+
+        // ============================================================
+        // INTERACTIONS (unchanged)
+        // ============================================================
         private async Task HandleInteractionAsync(SocketInteraction interaction)
         {
             if (interaction is not SocketMessageComponent component)
@@ -49,7 +79,6 @@ namespace TribeBot.Bot.Handlers
             string id = component.Data.CustomId;
             string selected = GetSelectedCategory(component);
 
-            // Adjust category based on buttons
             if (id == "help_prev")
                 selected = Prev(selected);
 
@@ -59,7 +88,6 @@ namespace TribeBot.Bot.Handlers
             if (id.EndsWith("_btn"))
                 selected = id.Replace("_btn", "");
 
-            // Build new embed
             Embed embed = selected switch
             {
                 "general" => HelpEmbeds.General(),
@@ -73,7 +101,6 @@ namespace TribeBot.Bot.Handlers
                 _ => HelpEmbeds.General()
             };
 
-            // Update UI
             await component.UpdateAsync(msg =>
             {
                 msg.Embed = embed;

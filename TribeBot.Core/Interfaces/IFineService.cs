@@ -18,5 +18,7 @@ namespace TribeBot.Core.Interfaces
         Task RemoveFineAsync(string fineId);
 
         Task ReduceReignStrikesAsync(); // called on !lockreign
+        Task UpdateFineAsync(FineRecord fine);
+
     }
 }

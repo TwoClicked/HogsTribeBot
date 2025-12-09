@@ -8,7 +8,6 @@ namespace TribeBot.Bot.Handlers
     {
         private readonly DiscordSocketClient _client;
 
-        // CONFIG: These IDs come from your original program
         private const ulong CreatorRoleId = 1392919560633581728;
         private const ulong PromotionChannelId = 1440887368247939154;
         private const ulong GuildId = 1109193500664287336;
@@ -18,32 +17,60 @@ namespace TribeBot.Bot.Handlers
             _client = client;
         }
 
+        // ============================================================
+        // Embed Helpers (Local for this handler)
+        // ============================================================
+
+        private Embed BuildEmbed(string title, string desc, Color color)
+        {
+            return new EmbedBuilder()
+                .WithTitle(title)
+                .WithDescription(desc)
+                .WithColor(color)
+                .WithFooter($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
+                .Build();
+        }
+
+        private Task SendSuccess(SocketMessage msg, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed("🟢 Success", text, Color.Green));
+
+        private Task SendError(SocketMessage msg, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed("❌ Error", text, Color.Red));
+
+        private Task SendInfo(SocketMessage msg, string title, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed($"🛡️ {title}", text, Color.Blue));
+
+
+        // ============================================================
+        // Entry Point
+        // ============================================================
         public async Task<bool> TryHandleAsync(SocketMessage message)
         {
             if (message.Author.IsBot)
                 return false;
 
-            // Only handle DM usage
+            // This handler is DM-only
             if (message.Channel is not IDMChannel)
                 return false;
 
-            if (!message.Content.StartsWith("!promote ", System.StringComparison.OrdinalIgnoreCase))
+            if (!message.Content.StartsWith("!promote ", StringComparison.OrdinalIgnoreCase))
                 return false;
 
             await HandlePromote(message);
             return true;
         }
 
-        // ======================================================================
+
+        // ============================================================
         // !promote <YouTubeLink>
-        // ======================================================================
+        // ============================================================
         private async Task HandlePromote(SocketMessage message)
         {
             string link = message.Content.Substring("!promote ".Length).Trim();
 
             if (!link.StartsWith("http"))
             {
-                await message.Channel.SendMessageAsync("❌ Invalid link. Please provide a valid YouTube URL.");
+                await SendError(message, "Invalid link. Please provide a valid YouTube URL.");
                 return;
             }
 
@@ -52,28 +79,28 @@ namespace TribeBot.Bot.Handlers
 
             if (guildUser == null)
             {
-                await message.Channel.SendMessageAsync("❌ You must be in the server to use this.");
+                await SendError(message, "You must be in the server to use this command.");
                 return;
             }
 
-            // Check content creator role
+            // Check role
             bool hasRole = guildUser.Roles.Any(r => r.Id == CreatorRoleId);
 
             if (!hasRole)
             {
-                await message.Channel.SendMessageAsync("❌ You must have the **Content Creator** role to use this command.");
+                await SendError(message, "You must have the **Content Creator** role to use this command.");
                 return;
             }
 
-            // Get promotion channel
+            // Get promo channel
             var promoChannel = _client.GetChannel(PromotionChannelId) as IMessageChannel;
             if (promoChannel == null)
             {
-                await message.Channel.SendMessageAsync("❌ Promotion channel not found.");
+                await SendError(message, "Promotion channel not found.");
                 return;
             }
 
-            // Send promotion announcement
+            // Post the announcement (PUBLIC MESSAGE SHOULD REMAIN TEXT)
             await promoChannel.SendMessageAsync(
                 "@everyone\n" +
                 $"📣 **New Video Drop!**\n\n" +
@@ -85,8 +112,8 @@ namespace TribeBot.Bot.Handlers
                 "Let’s show them some love! 🐗💥"
             );
 
-            // Confirm to creator privately
-            await message.Channel.SendMessageAsync("✅ Your promotion has been posted!");
+            // DM Confirmation
+            await SendSuccess(message, "Your promotion has been posted!");
         }
     }
 }

@@ -72,7 +72,7 @@ namespace TribeBot.Data.GoogleSheets
                     Might = int.TryParse(row[3]?.ToString(), out var m) ? m : 0,
                     KillPoints = long.TryParse(row[4]?.ToString(), out var k) ? k : 0,
                     CollectorLevel = int.TryParse(row[5]?.ToString(), out var c) ? c : 0,
-                    ReignPoints = ulong.TryParse(row[6]?.ToString(), out var rp) ? rp : 0,
+                    ReignPoints = long.TryParse(row[6]?.ToString(), out var rp) ? rp : 0,
                     LastUpdatedUTC = DateTime.TryParse(row[7]?.ToString(), out var d) ? d : DateTime.MinValue,
                     IsExempt = bool.TryParse(row[8]?.ToString(), out var ex) ? ex : false
                 };
@@ -727,5 +727,51 @@ namespace TribeBot.Data.GoogleSheets
                 rowIndex++;
             }
         }
+
+        public async Task SetReignRegistrationsAsync(List<ReignRegistration> registrations)
+        {
+            // 1. Clear old data (but keep header row)
+            var clear = new ClearValuesRequest();
+            await _sheetsService.Spreadsheets.Values.Clear(
+                clear,
+                _spreadsheetId,
+                $"{ReignSheet}!A2:C"
+            ).ExecuteAsync();
+
+            // 2. If there are no registrations left, we stop here.
+            if (registrations.Count == 0)
+                return;
+
+            // 3. Prepare rows for writing back
+            var values = new List<IList<object>>();
+
+            foreach (var reg in registrations)
+            {
+                values.Add(new List<object>
+        {
+            reg.DiscordUserId,
+            reg.IngameName,
+            reg.AppliedAtUtc.ToString("o")
+        });
+            }
+
+            var body = new ValueRange
+            {
+                Values = values
+            };
+
+            // 4. Write them all starting at A2
+            var update = _sheetsService.Spreadsheets.Values.Update(
+                body,
+                _spreadsheetId,
+                $"{ReignSheet}!A2:C"
+            );
+
+            update.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+
+            await update.ExecuteAsync();
+        }
+
     }
 }

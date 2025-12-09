@@ -26,6 +26,35 @@ namespace TribeBot.Bot.Handlers
             _memberService = memberService;
         }
 
+        // ================================================================
+        // EMBED HELPERS (local Style-2 utilities)
+        // ================================================================
+        private Embed BuildEmbed(string title, string desc, Color color)
+        {
+            return new EmbedBuilder()
+                .WithTitle(title)
+                .WithDescription(desc)
+                .WithColor(color)
+                .WithFooter($"{System.DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
+                .Build();
+        }
+
+        private Task SendError(SocketMessage m, string text)
+            => m.Channel.SendMessageAsync(embed: BuildEmbed("❌ Error", text, Color.Red));
+
+        private Task SendWarning(SocketMessage m, string text)
+            => m.Channel.SendMessageAsync(embed: BuildEmbed("⚠️ Warning", text, Color.Orange));
+
+        private Task SendSuccess(SocketMessage m, string text)
+            => m.Channel.SendMessageAsync(embed: BuildEmbed("🟢 Success", text, Color.Green));
+
+        private Task SendInfo(SocketMessage m, string title, string text)
+            => m.Channel.SendMessageAsync(embed: BuildEmbed($"🛡️ {title}", text, Color.Blue));
+
+
+        // ================================================================
+        // MAIN ENTRY
+        // ================================================================
         public async Task<bool> TryHandleAsync(SocketMessage message)
         {
             if (message.Author.IsBot)
@@ -33,51 +62,54 @@ namespace TribeBot.Bot.Handlers
 
             ulong userId = message.Author.Id;
 
-            // If user is inside a flow, forward message to that flow
+            // If a flow is already active, forward the message into it
             if (_flowManager.IsInFlow(userId))
             {
                 var flow = _flowManager.GetFlow(userId);
                 return await flow!.HandleAsync(message);
             }
 
-            // Detect command
+            // Detect starting command
             if (!message.Content.Equals("!register", System.StringComparison.OrdinalIgnoreCase))
                 return false;
 
-            // Must occur in server or DM? Original behavior allowed use anywhere and bot DM’d them.
+            // Must be in the server
             var guild = _client.GetGuild(GuildId);
             var user = guild?.GetUser(userId);
 
             if (user == null)
             {
-                await message.Channel.SendMessageAsync("❌ You must be in the server to register.");
+                await SendError(message, "You must be in the server to register.");
                 return true;
             }
 
-            // Check role
+            // Must have the HOGS role
             if (!user.Roles.Any(r => r.Id == HogsRoleId))
             {
-                await message.Channel.SendMessageAsync("❌ You do not have the **Member HOGS** role.");
+                await SendError(message, "You do not have the **Member HOGS** role.");
                 return true;
             }
 
-            // Attempt DM
+            // Try DMing user to begin flow
             try
             {
                 var dm = await message.Author.CreateDMChannelAsync();
                 await dm.SendMessageAsync(
                     "👋 Let's get you registered!\n" +
-                    "Enter your **In-game name** (type `cancel` to stop at any time or type `back` to return to a previous question).");
+                    "Enter your **in-game name**.\n\n" +
+                    "Type **`cancel`** to stop at any time or **`back`** to return to the previous question.");
             }
             catch
             {
-                await message.Channel.SendMessageAsync($"{message.Author.Mention} ❌ I couldn't DM you.");
+                await SendError(message, "I was unable to DM you. Please enable private messages and try again.");
                 return true;
             }
 
             // Start flow
-            var newFlow = new RegistrationFlow(userId, _memberService, _flowManager,_client);
+            var newFlow = new RegistrationFlow(userId, _memberService, _flowManager, _client);
             _flowManager.StartFlow(userId, newFlow);
+
+            await SendSuccess(message, "Registration started! Please check your DMs.");
 
             return true;
         }

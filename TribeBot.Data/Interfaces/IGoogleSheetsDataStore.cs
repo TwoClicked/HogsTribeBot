@@ -20,6 +20,10 @@ namespace TribeBot.Data.Interfaces
         Task AddReignRegistrationAsync(ReignRegistration reg);
         Task<List<ReignRegistration>> GetAllReignRegistrationsAsync();
         Task ClearReignRegistrationsAsync();
+
+        // Update the entire reign list (Needed for removals)
+        Task SetReignRegistrationsAsync(List<ReignRegistration> registrations);
+
         Task<bool> GetReignLockedAsync();
         Task SetReignLockedAsync(bool locked);
 

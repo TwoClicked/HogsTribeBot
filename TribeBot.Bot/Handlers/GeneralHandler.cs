@@ -1,6 +1,6 @@
 ﻿using Discord;
 using Discord.WebSocket;
-using Google.Apis.Util.Store;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using TribeBot.Core.Entities;
@@ -19,7 +19,6 @@ namespace TribeBot.Bot.Handlers
 
         private const ulong OfficerRoleId = 1222665812775534592;
 
-
         public GeneralHandler(
             DiscordSocketClient client,
             IMemberService memberService,
@@ -34,106 +33,138 @@ namespace TribeBot.Bot.Handlers
             _dataStore = dataStore;
         }
 
+        // ======================================================================
+        // EMBEDS (local)
+        // ======================================================================
+        private Embed BuildEmbed(string title, string desc, Color color)
+        {
+            return new EmbedBuilder()
+                .WithTitle(title)
+                .WithDescription(desc)
+                .WithColor(color)
+                .WithFooter($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
+                .Build();
+        }
 
+        // MESSAGE-based helpers ==============================
+        private Task SendSuccess(SocketMessage msg, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed("🟢 Success", text, Color.Green));
 
+        private Task SendError(SocketMessage msg, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed("❌ Error", text, Color.Red));
+
+        private Task SendWarning(SocketMessage msg, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed("⚠️ Warning", text, Color.Orange));
+
+        private Task SendInfo(SocketMessage msg, string title, string text)
+            => msg.Channel.SendMessageAsync(embed: BuildEmbed($"🛡️ {title}", text, Color.Blue));
+
+        // CHANNEL-based helpers (required to fix your error) ==================
+        private Task SendSuccess(IMessageChannel ch, string text)
+            => ch.SendMessageAsync(embed: BuildEmbed("🟢 Success", text, Color.Green));
+
+        private Task SendError(IMessageChannel ch, string text)
+            => ch.SendMessageAsync(embed: BuildEmbed("❌ Error", text, Color.Red));
+
+        private Task SendWarning(IMessageChannel ch, string text)
+            => ch.SendMessageAsync(embed: BuildEmbed("⚠️ Warning", text, Color.Orange));
+
+        private Task SendInfo(IMessageChannel ch, string title, string text)
+            => ch.SendMessageAsync(embed: BuildEmbed($"🛡️ {title}", text, Color.Blue));
+
+        // ======================================================================
+        // ROOT HANDLER
+        // ======================================================================
         public async Task<bool> TryHandleAsync(SocketMessage message)
         {
-            if (message.Author.IsBot)
-                return false;
+            if (message.Author.IsBot) return false;
 
-            string content = message.Content.Trim();
+            string content = message.Content.Trim().ToLower();
 
-            if (content.Equals("!myinfo", System.StringComparison.OrdinalIgnoreCase))
+            if (content == "!myinfo")
             {
                 await MyInfo(message);
                 return true;
             }
 
-            if (content.Equals("!listmembers", System.StringComparison.OrdinalIgnoreCase))
+            if (content == "!listmembers")
             {
                 await ListMembers(message);
                 return true;
             }
 
-            if (content.StartsWith("!viewinfo", System.StringComparison.OrdinalIgnoreCase))
+            if (content.StartsWith("!viewinfo"))
             {
                 await ViewInfo(message);
                 return true;
             }
 
-            if (content.StartsWith("!listnonregistered", System.StringComparison.OrdinalIgnoreCase))
+            if (content.StartsWith("!listnonregistered"))
             {
                 await ViewNonRegisteredMembers(message);
                 return true;
             }
 
-            if (content.StartsWith("!removemember", System.StringComparison.OrdinalIgnoreCase))
+            if (content.StartsWith("!removemember"))
             {
                 await RemoveMember(message);
                 return true;
             }
 
-            if (content.StartsWith("!registerreminder", System.StringComparison.OrdinalIgnoreCase))
+            if (content.StartsWith("!registerreminder"))
             {
                 await SendRegisterReminders(message);
                 return true;
             }
+
             return false;
         }
 
+        // ======================================================================
+        // !registerreminder (OFFICERS)
+        // ======================================================================
         private async Task SendRegisterReminders(SocketMessage message)
         {
-            // ============================
-            // !registerreminder (manual)
-            // ============================
+            if (message.Content != "!registerreminder") return;
 
-            if (message.Content.Equals("!registerreminder", StringComparison.OrdinalIgnoreCase))
+            if (message.Channel is not SocketGuildChannel)
             {
-                if (message.Channel is not SocketGuildChannel)
-                {
-                    await message.Channel.SendMessageAsync("This command can only be used in the server.");
-                    return;
-                }
-
-                var caller = message.Author as SocketGuildUser;
-                ulong officerRoleId = 1222665812775534592;
-
-                if (!caller.Roles.Any(r => r.Id == officerRoleId))
-                {
-                    await message.Channel.SendMessageAsync($"{caller.Mention} you do not have permission.");
-                    return;
-                }
-
-                await message.Channel.SendMessageAsync("📨 Sending reminders in the background…");
-
-                // Run the reminder OUTSIDE the gateway event
-                _ = Task.Run(async () =>
-                {
-                    await SendRegistrationReminderManualAsync(message.Channel);
-                });
-
+                await SendError(message, "This command can only be used inside the server.");
                 return;
             }
+
+            var caller = message.Author as SocketGuildUser;
+
+            if (!caller.Roles.Any(r => r.Id == OfficerRoleId))
+            {
+                await SendError(message, $"{caller.Mention} you do not have permission.");
+                return;
+            }
+
+            await SendInfo(message, "Registry Reminder", "📨 Sending reminders in the background…");
+
+            _ = Task.Run(async () =>
+            {
+                await SendRegistrationReminderManualAsync(message.Channel);
+            });
         }
 
-        //Manual sender for registration
-        private async Task SendRegistrationReminderManualAsync(IMessageChannel originChannel)
+        private async Task SendRegistrationReminderManualAsync(IMessageChannel origin)
         {
             try
             {
                 var guild = _client.GetGuild(1109193500664287336);
 
-                ulong hogsRoleId = 1222668156271591485; // LIVE ROLE
+                ulong hogsRoleId = 1222668156271591485;
                 var hogsRole = guild.GetRole(hogsRoleId);
 
                 if (hogsRole == null)
                 {
-                    await originChannel.SendMessageAsync("❌ HOGS role not found.");
+                    await SendError(origin, "HOGS role not found.");
                     return;
                 }
 
-                var memberService = _memberService;
-                var registered = await memberService.GetAllMembersAsync();
+                var registered = await _memberService.GetAllMembersAsync();
                 var registeredIds = registered.Select(m => m.DiscordUserId).ToHashSet();
 
                 var unregistered = hogsRole.Members
@@ -142,16 +173,12 @@ namespace TribeBot.Bot.Handlers
 
                 if (unregistered.Count == 0)
                 {
-                    await originChannel.SendMessageAsync("🎉 All HOGS members are already registered!");
+                    await SendSuccess(origin, "All HOGS members are already registered!");
                     return;
                 }
 
-                // Officer log channel
-                ulong officerLogChannelId = 1440209811621937273;
-                var officerChannel = _client.GetChannel(officerLogChannelId) as IMessageChannel;
-
                 int sent = 0;
-                List<ulong> failed = new();
+                var failed = new System.Collections.Generic.List<ulong>();
 
                 foreach (var user in unregistered)
                 {
@@ -160,162 +187,125 @@ namespace TribeBot.Bot.Handlers
                         var dm = await user.CreateDMChannelAsync();
                         await dm.SendMessageAsync(
                             $"👋 Hello **{user.Username}**, you still need to register with the Tribe Bot.\n" +
-                            $"Please type `!register` here in DM.\n\n" +
-                            $"Registration is required to participate in tribe events.");
-
+                            $"Please type `!register` here to complete registration.");
                         sent++;
-
-                        await Task.Delay(1200); // safe delay for Discord rate limits
+                        await Task.Delay(1200);
                     }
                     catch
                     {
                         failed.Add(user.Id);
-
-                        if (officerChannel != null)
-                            await officerChannel.SendMessageAsync(
-                                $"⚠️ Could not DM <@{user.Id}> — Their DMs may be closed.");
-
-                        await Task.Delay(2000); // longer cooldown after a failure
+                        await Task.Delay(2000);
                     }
                 }
 
-                // Build final summary for the officer who ran the command
-                string result =
-                    $"📨 **Manual Registration Reminder Summary**\n\n" +
-                    $"• Unregistered members: **{unregistered.Count}**\n" +
-                    $"• DMs sent successfully: **{sent}**\n" +
-                    $"• Failed deliveries: **{failed.Count}**";
+                string summary =
+                    $"📨 **Registration Reminder Summary**\n" +
+                    $"• Unregistered: **{unregistered.Count}**\n" +
+                    $"• DMs sent: **{sent}**\n" +
+                    $"• Failed: **{failed.Count}**";
 
-                if (failed.Count > 0)
-                {
-                    result += "\n\n⚠️ **Could not DM:**\n" +
-                              string.Join("\n", failed.Select(id => $"• <@{id}>"));
-                }
-
-                await originChannel.SendMessageAsync(result);
+                await SendInfo(origin, "Reminder Report", summary);
             }
             catch (Exception ex)
             {
-                await originChannel.SendMessageAsync($"❌ Error sending reminders: {ex.Message}");
+                await SendError(origin, $"Error sending reminders: {ex.Message}");
             }
         }
 
+        // ======================================================================
+        // !removemember (OFFICER)
+        // ======================================================================
         private async Task RemoveMember(SocketMessage message)
         {
-            // ============================
-            // !removemember @User (OFFICERS ONLY)
-            // ============================
+            if (!message.Content.StartsWith("!removemember")) return;
 
-            if (message.Content.StartsWith("!removemember", StringComparison.OrdinalIgnoreCase))
+            if (message.Channel is not SocketGuildChannel)
             {
-                if (message.Channel is not SocketGuildChannel guildChannel)
-                {
-                    await message.Channel.SendMessageAsync("This command can only be used inside the server.");
-                    return;
-                }
-
-                var caller = message.Author as SocketGuildUser;
-                ulong officerRoleId = 1222665812775534592;
-
-                if (!caller.Roles.Any(r => r.Id == officerRoleId))
-                {
-                    await message.Channel.SendMessageAsync($"{caller.Mention} you do not have permission to use this command.");
-                    return;
-                }
-
-                string args = message.Content.Substring("!removemember".Length).Trim();
-
-                if (string.IsNullOrWhiteSpace(args))
-                {
-                    await message.Channel.SendMessageAsync("Usage: `!removemember @user` or !removemember ingameName`");
-                    return;
-                }
-
-                var memberService = _memberService;
-                var dataStore = _dataStore;
-
-                Member? memberToRemove = null;
-
-                // CASE 1: remove by discord id
-                if (message.MentionedUsers.Count > 0)
-                {
-                    var targetUser = message.MentionedUsers.First();
-                    memberToRemove = await memberService.GetMemberByDiscordIdAsync(targetUser.Id.ToString());
-                }
-                else
-                {
-                    //CASE 2: Remove by ingame name
-                    string ingamename = args;
-                    var allMembers = await memberService.GetAllMembersAsync();
-
-                    memberToRemove = allMembers.FirstOrDefault(m =>
-                    m.IngameName.Equals(ingamename, StringComparison.OrdinalIgnoreCase));
-                }
-
-                if (memberToRemove == null)
-                {
-                    await message.Channel.SendMessageAsync($"❌ No registered member found matching **{args}**.");
-                    return;
-                }
-
-                bool success = await dataStore.RemoveMemberByDiscordIdAsync(memberToRemove.DiscordUserId);
-
-                if (success)
-                    await message.Channel.SendMessageAsync($"✅ Removed **{memberToRemove.IngameName}** from the member list.");
-                else
-                    await message.Channel.SendMessageAsync($"❌ Removal failed. Member not found in the sheets.");
-
+                await SendError(message, "This command can only be used inside the server.");
                 return;
             }
+
+            var caller = message.Author as SocketGuildUser;
+
+            if (!caller.Roles.Any(r => r.Id == OfficerRoleId))
+            {
+                await SendError(message, $"{caller.Mention} you do not have permission to use this command.");
+                return;
+            }
+
+            string args = message.Content.Substring("!removemember".Length).Trim();
+
+            if (string.IsNullOrWhiteSpace(args))
+            {
+                await SendWarning(message, "Usage: `!removemember @user` or `!removemember ingameName`");
+                return;
+            }
+
+            Member? memberToRemove = null;
+
+            if (message.MentionedUsers.Count > 0)
+            {
+                var target = message.MentionedUsers.First();
+                memberToRemove = await _memberService.GetMemberByDiscordIdAsync(target.Id.ToString());
+            }
+            else
+            {
+                var all = await _memberService.GetAllMembersAsync();
+                memberToRemove = all.FirstOrDefault(m => m.IngameName.Equals(args, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (memberToRemove == null)
+            {
+                await SendError(message, $"No registered member found matching **{args}**.");
+                return;
+            }
+
+            bool success = await _dataStore.RemoveMemberByDiscordIdAsync(memberToRemove.DiscordUserId);
+
+            if (success)
+                await SendSuccess(message, $"Removed **{memberToRemove.IngameName}** from the member list.");
+            else
+                await SendError(message, $"Removal failed — member not found in the sheets.");
         }
 
-
-        // ============================
+        // ======================================================================
         // !listnonregistered
-        // ============================
+        // ======================================================================
         private async Task ViewNonRegisteredMembers(SocketMessage message)
         {
-            if (message.Content.Equals("!listnonregistered", StringComparison.OrdinalIgnoreCase))
+            if (message.Content != "!listnonregistered") return;
+
+            if (message.Channel is not SocketGuildChannel sgc)
             {
-                if (message.Channel is not SocketGuildChannel lnrChan)
-                {
-                    await message.Channel.SendMessageAsync("This command can only be used in the server.");
-                    return;
-                }
-
-                var guild = lnrChan.Guild;
-                var memberService = _memberService;
-
-                var registered = await memberService.GetAllMembersAsync();
-                var registeredIds = registered.Select(m => m.DiscordUserId).ToHashSet();
-
-                ulong hogsRoleId = 1222668156271591485;
-                var hogsRole = guild.GetRole(hogsRoleId);
-
-                var nonRegistered = hogsRole.Members
-                    .Where(u => !registeredIds.Contains(u.Id.ToString()))
-                    .ToList();
-
-                if (nonRegistered.Count == 0)
-                {
-                    await message.Channel.SendMessageAsync("🎉 Everyone with HOGS role is registered!");
-                    return;
-                }
-
-                string msg = "❌ **Non-Registered Members**\n\n";
-
-                foreach (var u in nonRegistered)
-                    msg += $"• **`{u.DisplayName}`**\n";
-
-                await message.Channel.SendMessageAsync(msg);
+                await SendError(message, "This command can only be used inside the server.");
                 return;
             }
+
+            var guild = sgc.Guild;
+            var registered = await _memberService.GetAllMembersAsync();
+            var registeredIds = registered.Select(m => m.DiscordUserId).ToHashSet();
+
+            ulong hogsRoleId = 1222668156271591485;
+            var hogsRole = guild.GetRole(hogsRoleId);
+
+            var nonregistered = hogsRole.Members
+                .Where(u => !registeredIds.Contains(u.Id.ToString()))
+                .ToList();
+
+            if (nonregistered.Count == 0)
+            {
+                await SendSuccess(message, "🎉 Everyone with the HOGS role is registered!");
+                return;
+            }
+
+            string list = string.Join("\n", nonregistered.Select(n => $"• **{n.DisplayName}**"));
+
+            await SendInfo(message, "Non-Registered Members", list);
         }
 
-
-        // ============================================================
+        // ======================================================================
         // !myinfo
-        // ============================================================
+        // ======================================================================
         private async Task MyInfo(SocketMessage message)
         {
             string id = message.Author.Id.ToString();
@@ -323,8 +313,7 @@ namespace TribeBot.Bot.Handlers
 
             if (member == null)
             {
-                await message.Channel.SendMessageAsync(
-                    $"{message.Author.Mention} you are not registered. Use `!register`.");
+                await SendError(message, "You are not registered. Use `!register`.");
                 return;
             }
 
@@ -332,55 +321,59 @@ namespace TribeBot.Bot.Handlers
 
             string donationStatus =
                 member.IsExempt ? "🟦 EXEMPT" :
-                donations > 0 ? "✅ PAID" : "❌ UNPAID";
+                donations > 0 ? "Continue below…"
+                : "❌ UNPAID";
 
-            string reply =
-                $"🧾 **Your Profile**\n\n" +
+            donationStatus = member.IsExempt
+                ? "🟦 EXEMPT"
+                : donations > 0 ? "Continue below…" : "❌ UNPAID";
+
+            string info =
                 $"**Name:** {member.IngameName}\n" +
                 $"**ID:** {member.IngameId}\n" +
                 $"**Might:** {member.Might:N0}\n" +
                 $"**Kills:** {member.KillPoints:N0}\n" +
-                $"**Collector:** {member.CollectorLevel}\n" +
+                $"**Collector Level:** {member.CollectorLevel}\n" +
                 $"**Reign Points:** {member.ReignPoints}\n" +
-                $"**Exempt:** {(member.IsExempt ? "Yes" : "No")}\n" +
                 $"**Donation:** {donationStatus}\n" +
+                $"**Exempt:** {(member.IsExempt ? "Yes" : "No")}\n" +
                 $"**Updated:** {member.LastUpdatedUTC:yyyy-MM-dd HH:mm} UTC";
 
-            await message.Channel.SendMessageAsync(reply);
+            await SendInfo(message, "Your Profile", info);
         }
 
-        // ============================================================
+        // ======================================================================
         // !listmembers
-        // ============================================================
+        // ======================================================================
         private async Task ListMembers(SocketMessage message)
         {
             var members = await _memberService.GetAllMembersAsync();
 
             if (members.Count == 0)
             {
-                await message.Channel.SendMessageAsync("No members found.");
+                await SendError(message, "No members found.");
                 return;
             }
 
-            string msg = "📜 **Member List (A–Z)**\n\n";
-
-            foreach (var m in members.OrderBy(m => m.IngameName))
-                msg += $"• **{m.IngameName}** — `{m.IngameId}`\n";
+            string msg =
+                "📜 **Member List (A–Z)**\n\n" +
+                string.Join("\n",
+                    members.OrderBy(m => m.IngameName)
+                           .Select(m => $"• **{m.IngameName}** — `{m.IngameId}`"));
 
             await SendLong(message.Channel, msg);
         }
 
-        // ============================================================
-        // !viewinfo @user (Officer-only)
-        // ============================================================
+        // ======================================================================
+        // !viewinfo (OFFICER)
+        // ======================================================================
         private async Task ViewInfo(SocketMessage message)
         {
-            if (!IsOfficer(message))
-                return;
+            if (!IsOfficer(message)) return;
 
             if (message.MentionedUsers.Count == 0)
             {
-                await message.Channel.SendMessageAsync("Usage: `!viewinfo @user`");
+                await SendWarning(message, "Usage: `!viewinfo @user`");
                 return;
             }
 
@@ -390,62 +383,61 @@ namespace TribeBot.Bot.Handlers
             var member = await _memberService.GetMemberByDiscordIdAsync(id);
             if (member == null)
             {
-                await message.Channel.SendMessageAsync($"❌ <@{target.Id}> is not registered.");
+                await SendError(message, $"{target.Username} is not registered.");
                 return;
             }
 
             var donations = await _donationService.GetTotalForUserThisWeekAsync(id);
-
             string donationStatus =
                 member.IsExempt ? "🟦 EXEMPT" :
-                donations > 0 ? "✅ PAID" : "❌ UNPAID";
+                donations > 0 ? "Continue below…" : "❌ UNPAID";
 
             var fines = await _fineService.GetFinesForUserAsync(id);
-            var unpaid = fines.Where(f => !f.IsPaid).ToList();
-            var paid = fines.Where(f => f.IsPaid).ToList();
 
-            string unpaidText = unpaid.Count == 0
-                ? "• None\n"
-                : string.Join("", unpaid.Select(f =>
-                    $"• {f.Amount:N0} — {f.FineType} — FineID `{f.FineId}` ({f.PaidAmount:N0}/{f.Amount:N0})\n"));
+            string unpaid =
+                fines.Where(f => !f.IsPaid).Any()
+                    ? string.Join("", fines.Where(f => !f.IsPaid)
+                        .Select(f => $"• {f.Amount:N0} — {f.FineType} — FineID `{f.FineId}` ({f.PaidAmount}/{f.Amount})\n"))
+                    : "• None\n";
 
-            string paidText = paid.Count == 0
-                ? "• None\n"
-                : string.Join("", paid.Select(f =>
-                    $"• {f.Amount:N0} — {f.FineType} — FineID `{f.FineId}` — PAID\n"));
+            string paid =
+                fines.Where(f => f.IsPaid).Any()
+                    ? string.Join("", fines.Where(f => f.IsPaid)
+                        .Select(f => $"• {f.Amount:N0} — {f.FineType} — FineID `{f.FineId}` — PAID\n"))
+                    : "• None\n";
 
-            string reply =
-                $"📘 **Profile for <@{target.Id}>**\n\n" +
+            string profile =
                 $"**Name:** {member.IngameName}\n" +
                 $"**ID:** {member.IngameId}\n" +
                 $"**Might:** {member.Might:N0}\n" +
                 $"**Kills:** {member.KillPoints:N0}\n" +
-                $"**Collector:** {member.CollectorLevel}\n" +
+                $"**Collector Level:** {member.CollectorLevel}\n" +
                 $"**Reign Points:** {member.ReignPoints}\n" +
                 $"**Exempt:** {member.IsExempt}\n\n" +
                 $"🏦 **Donation:** {donationStatus}\n\n" +
-                $"💀 **Unpaid Fines:**\n{unpaidText}\n" +
-                $"🟩 **Paid Fines:**\n{paidText}\n" +
+                $"💀 **Unpaid Fines:**\n{unpaid}\n\n" +
+                $"🟩 **Paid Fines:**\n{paid}\n\n" +
                 $"🕒 **Last Updated:** {member.LastUpdatedUTC:yyyy-MM-dd HH:mm} UTC";
 
-            await SendLong(message.Channel, reply);
+            await SendLong(message.Channel, $"📘 **Profile for {target.Mention}**\n\n{profile}");
         }
 
-        // ============================================================
+        // ======================================================================
         // HELPERS
-        // ============================================================
+        // ======================================================================
         private bool IsOfficer(SocketMessage message)
         {
-            if (message.Channel is not SocketGuildChannel gc)
+            if (message.Channel is not SocketGuildChannel sgc)
             {
-                message.Channel.SendMessageAsync("❌ Must be used in guild.");
+                _ = SendError(message, "This command must be used inside the server.");
                 return false;
             }
 
-            var user = gc.GetUser(message.Author.Id);
+            var user = sgc.GetUser(message.Author.Id);
+
             if (user == null || !user.Roles.Any(r => r.Id == OfficerRoleId))
             {
-                message.Channel.SendMessageAsync($"{message.Author.Mention} ❌ No permission.");
+                _ = SendError(message, $"{message.Author.Mention}, you do not have permission.");
                 return false;
             }
 
@@ -455,6 +447,7 @@ namespace TribeBot.Bot.Handlers
         private async Task SendLong(IMessageChannel ch, string text)
         {
             const int limit = 1990;
+
             if (text.Length <= limit)
             {
                 await ch.SendMessageAsync(text);
@@ -462,19 +455,20 @@ namespace TribeBot.Bot.Handlers
             }
 
             var lines = text.Split('\n');
-            string buf = "";
-            foreach (var line in lines)
+            string buffer = "";
+
+            foreach (string line in lines)
             {
-                if ((buf + line).Length > limit)
+                if (buffer.Length + line.Length > limit)
                 {
-                    await ch.SendMessageAsync(buf);
-                    buf = "";
+                    await ch.SendMessageAsync(buffer);
+                    buffer = "";
                 }
-                buf += line + "\n";
+                buffer += line + "\n";
             }
 
-            if (buf.Length > 0)
-                await ch.SendMessageAsync(buf);
+            if (buffer.Length > 0)
+                await ch.SendMessageAsync(buffer);
         }
     }
 }

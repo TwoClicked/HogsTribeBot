@@ -16,7 +16,7 @@ namespace TribeBot.Core.Entities
         public int Might { get; set; }
         public long KillPoints { get; set; }
         public int CollectorLevel { get; set; }
-        public ulong ReignPoints { get; set; } // Manually updated in sheets by Reign admin
+        public long ReignPoints { get; set; } // Manually updated in sheets by Reign admin
         public DateTime LastUpdatedUTC { get; set; }
         public bool IsExempt { get; set; }
 

@@ -35,7 +35,8 @@ namespace TribeBot.Bot.UI
             .WithTitle("⚔️ Reign Commands")
             .AddField("!applyreign", "Apply for Viking Reign")
             .AddField("!listreign", "Show sorted applicants")
-            .AddField("Officer Only", "`!clearreign`, `!lockreign`, `!unlockreign`, `!exempt`, `!unexempt`")
+            .AddField("!leavereign", "Leave the current reignlist")
+            .AddField("Officer Only", "`!clearreign`, `!lockreign`, `!unlockreign`, `!exempt`, `!unexempt`, `!removereign`")
             .WithColor(Color.DarkRed)
             .Build();
 
@@ -51,7 +52,7 @@ namespace TribeBot.Bot.UI
         public static Embed Fines() => new EmbedBuilder()
             .WithTitle("💀 Fine Commands")
             .AddField("!myfines", "View your fines")
-            .AddField("Officer Only", "`!fineuser`, `!finereign`, `!finelist`, `!removefine`")
+            .AddField("Officer Only", "`!fineuser`, `!finereign`, `!finelist`, `!removefine`, `!verifiedpayment`")
             .WithColor(Color.DarkGrey)
             .Build();
 
