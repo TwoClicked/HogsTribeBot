@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using TribeBot.Core.Entities;
 using TribeBot.Core.Interfaces;
 using TribeBot.Services.Services;
+using TribeBot.Bot.UI; // IMPORTANT: For EmbedHelper
 
 namespace TribeBot.Bot.Handlers
 {
@@ -35,46 +36,11 @@ namespace TribeBot.Bot.Handlers
             _ocrService = ocrService;
         }
 
-        // ======================================================================
-        // EMBED HELPERS (LOCAL)
-        // ======================================================================
-        private Embed BuildEmbed(string title, string desc, Color color)
-        {
-            return new EmbedBuilder()
-                .WithTitle(title)
-                .WithDescription(desc)
-                .WithColor(color)
-                .WithFooter($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
-                .Build();
-        }
-
-        private Task SendSuccess(SocketMessage msg, string text)
-            => msg.Channel.SendMessageAsync(embed: BuildEmbed("🟢 Success", text, Color.Green));
-
-        private Task SendError(SocketMessage msg, string text)
-            => msg.Channel.SendMessageAsync(embed: BuildEmbed("❌ Error", text, Color.Red));
-
-        private Task SendWarning(SocketMessage msg, string text)
-            => msg.Channel.SendMessageAsync(embed: BuildEmbed("⚠️ Warning", text, Color.Orange));
-
-        private Task SendInfo(SocketMessage msg, string title, string text)
-            => msg.Channel.SendMessageAsync(embed: BuildEmbed($"🛡️ {title}", text, Color.Blue));
-
         private IMessageChannel OfficerLog =>
             _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
 
         private Task SendLog(string title, Dictionary<string, string> fields)
-        {
-            var eb = new EmbedBuilder()
-                .WithTitle($"📘 {title}")
-                .WithColor(new Color(0, 110, 255))
-                .WithFooter($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
-
-            foreach (var kv in fields)
-                eb.AddField(kv.Key, kv.Value, true);
-
-            return OfficerLog?.SendMessageAsync(embed: eb.Build()) ?? Task.CompletedTask;
-        }
+            => OfficerLog?.SendMessageAsync(embed: EmbedHelper.Log(title, fields)) ?? Task.CompletedTask;
 
         // ======================================================================
         // ROOT ENTRY
@@ -115,14 +81,18 @@ namespace TribeBot.Bot.Handlers
                 return true;
             }
 
-            // OCR payment
+            if (content.Equals("!finereminder"))
+            {
+                await SendFineReminder(message);
+                return true;
+            }
+
             if (message.Channel.Id == FinePaymentChannelId && message.Attachments.Any())
             {
                 await ProcessFinePayment(message);
                 return true;
             }
 
-            // Verify payment
             if (content.StartsWith("!verifiedpayment"))
             {
                 await VerifyPayment(message);
@@ -130,6 +100,24 @@ namespace TribeBot.Bot.Handlers
             }
 
             return false;
+        }
+
+        private async Task RemoveFine(SocketMessage message)
+        {
+            if (!IsOfficer(message)) return;
+
+            var parts = message.Content.Split(' ', 2);
+            if (parts.Length < 2)
+            {
+                await message.Channel.SendMessageAsync("Usage: !removefine FineId");
+                return;
+            }
+
+            string fineId = parts[1].Trim();
+
+            await _fineService.RemoveFineAsync(fineId);
+
+            await message.Channel.SendMessageAsync($"🗑️ Removed fine {fineId}.");
         }
 
         // ======================================================================
@@ -141,7 +129,8 @@ namespace TribeBot.Bot.Handlers
 
             if (message.MentionedUsers.Count == 0)
             {
-                await SendWarning(message, "Usage: `!verifiedpayment @user`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("Usage: `!verifiedpayment @user`"));
                 return;
             }
 
@@ -150,7 +139,8 @@ namespace TribeBot.Bot.Handlers
 
             if (member == null)
             {
-                await SendError(message, $"{user.Username} is not registered.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"{user.Username} is not registered."));
                 return;
             }
 
@@ -159,7 +149,8 @@ namespace TribeBot.Bot.Handlers
 
             if (!unpaid.Any())
             {
-                await SendInfo(message, "Fine Status", $"{user.Mention} has no unpaid fines.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Info("Fine Status", $"{user.Mention} has no unpaid fines."));
                 return;
             }
 
@@ -170,9 +161,9 @@ namespace TribeBot.Bot.Handlers
                 await _fineService.UpdateFineAsync(fine);
             }
 
-            await SendSuccess(message, $"Verified manual payment for {user.Mention}. All fines marked as **PAID**.");
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success($"Verified manual payment for {user.Mention}. All fines marked as **PAID**."));
 
-            // DM user
             try
             {
                 var dm = await user.CreateDMChannelAsync();
@@ -199,60 +190,64 @@ namespace TribeBot.Bot.Handlers
 
             if (message.MentionedUsers.Count == 0)
             {
-                await SendWarning(message, "Usage: `!fineuser @user amount reason`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("Usage: `!fineuser @user amount reason`"));
                 return;
             }
 
             var target = message.MentionedUsers.First();
             var parts = message.Content.Split(' ', 4);
+
             if (parts.Length < 4)
             {
-                await SendWarning(message, "Usage: `!fineuser @user amount reason`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("Usage: `!fineuser @user amount reason`"));
                 return;
             }
 
             if (!int.TryParse(parts[2], out int amount) || amount <= 0)
             {
-                await SendError(message, "Invalid fine amount.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Invalid fine amount."));
                 return;
             }
 
             string reason = parts[3];
-
             var member = await _memberService.GetMemberByDiscordIdAsync(target.Id.ToString());
+
             if (member == null)
             {
-                await SendError(message, $"{target.Username} is not registered.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"{target.Username} is not registered."));
                 return;
             }
 
             await _fineService.AddEventFineAsync(member, amount, reason);
 
-            await SendSuccess(
-                message,
-                $"💸 **Event Fine Issued**\n\n" +
-                $"• User: {target.Mention}\n" +
-                $"• Amount: **{amount:N0}**\n" +
-                $"• Reason: *{reason}*\n" +
-                $"• Type: **Event Fine**"
-            );
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success(
+                    $"💸 **Event Fine Issued**\n\n" +
+                    $"• User: {target.Mention}\n" +
+                    $"• Amount: **{amount:N0}**\n" +
+                    $"• Reason: *{reason}*\n" +
+                    $"• Type: **Event Fine**"
+                ));
 
-            // DM user
             try
             {
                 var dm = await target.CreateDMChannelAsync();
                 await dm.SendMessageAsync(
                     $"⚠️ **You received an Event Fine!**\n" +
                     $"Amount: **{amount:N0}**\nReason: {reason}\n" +
-                    $"Please pay it in <#{FinePaymentChannelId}>.");
+                    $"Please pay in <#{FinePaymentChannelId}>.");
             }
             catch { }
 
             await SendLog("Event Fine Issued", new()
             {
                 { "User", target.Username },
-                { "Officer", message.Author.Username },
                 { "Amount", amount.ToString("N0") },
+                { "Officer", message.Author.Username },
                 { "Reason", reason }
             });
         }
@@ -266,30 +261,35 @@ namespace TribeBot.Bot.Handlers
 
             if (message.MentionedUsers.Count == 0)
             {
-                await SendWarning(message, "Usage: `!finereign @user amount reason`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("Usage: `!finereign @user amount reason`"));
                 return;
             }
 
             var target = message.MentionedUsers.First();
             var parts = message.Content.Split(' ', 4);
+
             if (parts.Length < 4)
             {
-                await SendWarning(message, "Usage: `!finereign @user amount reason`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("Usage: `!finereign @user amount reason`"));
                 return;
             }
 
             if (!int.TryParse(parts[2], out int amount) || amount <= 0)
             {
-                await SendError(message, "Invalid fine amount.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Invalid fine amount."));
                 return;
             }
 
             string reason = parts[3];
-
             var member = await _memberService.GetMemberByDiscordIdAsync(target.Id.ToString());
+
             if (member == null)
             {
-                await SendError(message, $"{target.Username} is not registered.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"{target.Username} is not registered."));
                 return;
             }
 
@@ -304,37 +304,24 @@ namespace TribeBot.Bot.Handlers
                 ? "Strikes added: **2** (repeat offense)"
                 : "No strikes added (first offense)";
 
-            await SendSuccess(
-                message,
-                $"⚔️ **Reign Fine Issued**\n\n" +
-                $"• User: {target.Mention}\n" +
-                $"• Amount: **{amount:N0}**\n" +
-                $"• Reason: *{reason}*\n" +
-                $"{extra}"
-            );
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success(
+                    $"⚔️ **Reign Fine Issued**\n\n" +
+                    $"• User: {target.Mention}\n" +
+                    $"• Amount: **{amount:N0}**\n" +
+                    $"• Reason: *{reason}*\n" +
+                    $"{extra}"
+                ));
 
-            // DM user
             try
             {
                 var dm = await target.CreateDMChannelAsync();
 
-                if (repeatOffense)
-                {
-                    await dm.SendMessageAsync(
-                        $"⚠️ **Repeat Reign Fine!**\n" +
-                        $"Amount: **{amount:N0}**\nReason: {reason}\n" +
-                        $"Strikes Added: **2**\n" +
-                        $"🚫 You are blacklisted from the next **two** Reign events.\n" +
-                        $"Pay in <#{FinePaymentChannelId}>.");
-                }
-                else
-                {
-                    await dm.SendMessageAsync(
-                        $"⚠️ **You received a Reign Fine.**\n" +
-                        $"Amount: **{amount:N0}**\nReason: {reason}\n" +
-                        $"No strikes added for first offense.\n" +
-                        $"Pay in <#{FinePaymentChannelId}>.");
-                }
+                string dmMsg = repeatOffense
+                    ? $"⚠️ **Repeat Reign Fine!**\nAmount: **{amount:N0}**\nReason: {reason}\nStrikes Added: **2**\n🚫 Blacklisted from the next TWO reign events.\nPay in <#{FinePaymentChannelId}>."
+                    : $"⚠️ **Reign Fine**\nAmount: **{amount:N0}**\nReason: {reason}\nNo strikes added.\nPay in <#{FinePaymentChannelId}>.";
+
+                await dm.SendMessageAsync(dmMsg);
             }
             catch { }
 
@@ -344,12 +331,12 @@ namespace TribeBot.Bot.Handlers
                 { "Amount", amount.ToString("N0") },
                 { "Officer", message.Author.Username },
                 { "Reason", reason },
-                { "Repeat Offense", repeatOffense ? "Yes" : "No" }
+                { "Repeat Offender", repeatOffense ? "Yes" : "No" }
             });
         }
 
         // ======================================================================
-        // OCR FINE PAYMENT
+        // OCR FINE PAYMENT HANDLING
         // ======================================================================
         private async Task ProcessFinePayment(SocketMessage message)
         {
@@ -358,7 +345,8 @@ namespace TribeBot.Bot.Handlers
 
             if (member == null)
             {
-                await SendError(message, "You are not registered.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("You are not registered."));
                 return;
             }
 
@@ -376,27 +364,26 @@ namespace TribeBot.Bot.Handlers
                     var data = await client.GetByteArrayAsync(att.Url);
                     await File.WriteAllBytesAsync(tmp, data);
                 }
-
                 int? amt = await _ocrService.ExtractDonationAmountAsync(tmp);
                 File.Delete(tmp);
 
-                if (amt.HasValue)
-                    total += amt.Value;
+                if (amt.HasValue) total += amt.Value;
             }
 
             if (total <= 0)
             {
-                await SendError(message, "I could not read any fine payment amount.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("I could not read any fine payment amount."));
                 return;
             }
 
             await _fineService.AddPaymentAsync(discordId, total);
-
             await message.AddReactionAsync(new Emoji("💸"));
-            await SendSuccess(
-                message,
-                $"Payment received! An officer will verify shortly.\n\n⚠️ Reign fines remain visible until strike resets."
-            );
+
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success(
+                    $"Payment received! An officer will verify shortly.\n\n⚠️ Reign fines remain visible until strike resets."
+                ));
         }
 
         // ======================================================================
@@ -407,9 +394,10 @@ namespace TribeBot.Bot.Handlers
             string id = message.Author.Id.ToString();
             var fines = await _fineService.GetFinesForUserAsync(id);
 
-            if (fines.Count == 0)
+            if (!fines.Any())
             {
-                await SendSuccess(message, "🎉 You have no fines!");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Success("🎉 You have no fines!"));
                 return;
             }
 
@@ -437,12 +425,13 @@ namespace TribeBot.Bot.Handlers
             string msg =
                 $"🧾 **Your Fines**\n\n" +
                 "🟥 **Unpaid:**\n" +
-                (string.IsNullOrEmpty(unpaid) ? "• None\n" : unpaid) +
+                (string.IsNullOrWhiteSpace(unpaid) ? "• None\n" : unpaid) +
                 $"\n**Total Owed: {totalOwed:N0}**\n\n" +
-                "🟩 **Paid / Awaiting Removal:**\n" +
-                (string.IsNullOrEmpty(paid) ? "• None\n" : paid);
+                "🟩 **Paid:**\n" +
+                (string.IsNullOrWhiteSpace(paid) ? "• None\n" : paid);
 
-            await SendInfo(message, "Your Fines", msg);
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info("Your Fine Overview", msg));
         }
 
         // ======================================================================
@@ -457,62 +446,98 @@ namespace TribeBot.Bot.Handlers
 
             string msg = "💀 **Fine List**\n\n";
 
-            msg += "🟥 **UNPAID FINES**\n";
-            if (unpaid.Count == 0)
-            {
-                msg += "• None\n";
-            }
-            else
-            {
-                foreach (var f in unpaid)
-                {
-                    msg +=
-                        $"• **{f.IngameName}** — {f.Amount:N0} — `{f.FineType}` — FineID `{f.FineId}` — " +
-                        $"({f.PaidAmount:N0}/{f.Amount:N0})\n";
-                }
-            }
+            msg += "🟥 **UNPAID FINES:**\n";
+            msg += unpaid.Any()
+                ? string.Join("\n", unpaid.Select(f =>
+                    $"• **{f.IngameName}** — {f.Amount:N0} — `{f.FineType}` — ID `{f.FineId}` ({f.PaidAmount}/{f.Amount})"))
+                : "• None";
 
-            msg += "\n🟩 **PAID (Awaiting Removal)**\n";
-            if (paid.Count == 0)
-            {
-                msg += "• None\n";
-            }
-            else
-            {
-                foreach (var f in paid)
-                {
-                    msg +=
-                        $"• **{f.IngameName}** — {f.Amount:N0} — `{f.FineType}` — FineID `{f.FineId}` — PAID\n";
-                }
-            }
+            msg += "\n\n🟩 **PAID (Awaiting Removal):**\n";
+            msg += paid.Any()
+                ? string.Join("\n", paid.Select(f =>
+                    $"• **{f.IngameName}** — {f.Amount:N0} — `{f.FineType}` — ID `{f.FineId}` — PAID"))
+                : "• None";
 
-            await SendInfo(message, "Fine List", msg);
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info("Fine List", msg));
         }
 
         // ======================================================================
-        // !REMOVEFINE
+        // !FINEREMINDER — Officer-only mass DM
         // ======================================================================
-        private async Task RemoveFine(SocketMessage message)
+        private async Task SendFineReminder(SocketMessage message)
         {
             if (!IsOfficer(message)) return;
 
-            var parts = message.Content.Split(' ', 2);
-            if (parts.Length < 2)
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info("Fine Reminder", "📨 Sending fine reminders in the background…"));
+
+            _ = Task.Run(async () => await SendFineReminderBackground(message));
+        }
+
+        private async Task SendFineReminderBackground(SocketMessage message)
+        {
+            var guild = (message.Channel as SocketGuildChannel)?.Guild;
+            if (guild == null) return;
+
+            var allFines = await _fineService.GetAllFinesAsync();
+
+            var unpaidUsers = allFines
+                .Where(f => !f.IsPaid)
+                .GroupBy(f => f.DiscordUserId)
+                .Select(g => new
+                {
+                    UserId = g.Key,
+                    TotalOwed = g.Sum(x => x.Amount - x.PaidAmount),
+                    Count = g.Count()
+                })
+                .ToList();
+
+            int sent = 0;
+            int failed = 0;
+
+            foreach (var entry in unpaidUsers)
             {
-                await SendWarning(message, "Usage: `!removefine FineId`");
-                return;
+                ulong uid = ulong.Parse(entry.UserId);
+                var user = guild.GetUser(uid);
+
+                if (user == null)
+                {
+                    failed++;
+                    continue;
+                }
+
+                try
+                {
+                    var dm = await user.CreateDMChannelAsync();
+                    await dm.SendMessageAsync(
+                        $"💀 **Fine Reminder**\n\n" +
+                        $"You currently have **{entry.Count} unpaid fine(s)** totaling **{entry.TotalOwed:N0}**.\n" +
+                        $"Please pay them in <#{FinePaymentChannelId}>.\n\n" +
+                        $"If you believe this is incorrect, contact an officer."
+                    );
+
+                    sent++;
+                    await Task.Delay(1200);
+                }
+                catch
+                {
+                    failed++;
+                    await SendLog("Fine Reminder Failure", new()
+                    {
+                        { "User", uid.ToString() },
+                        { "Reason", "DM failed" }
+                    });
+                    await Task.Delay(1500);
+                }
             }
 
-            string fineId = parts[1].Trim();
-            await _fineService.RemoveFineAsync(fineId);
-
-            await SendSuccess(message, $"🗑️ Removed fine `{fineId}`.");
-
-            await SendLog("Fine Removed", new()
-            {
-                { "Fine ID", fineId },
-                { "Officer", message.Author.Username }
-            });
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info("Fine Reminder Summary",
+                    $"📨 **Fine reminders completed**\n\n" +
+                    $"• Users with unpaid fines: **{unpaidUsers.Count}**\n" +
+                    $"• DMs sent: **{sent}**\n" +
+                    $"• Failed deliveries: **{failed}**"));
         }
 
         // ======================================================================
@@ -522,7 +547,8 @@ namespace TribeBot.Bot.Handlers
         {
             if (message.Channel is not SocketGuildChannel gc)
             {
-                _ = SendError(message, "This command must be used inside the server.");
+                _ = message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("This command must be used inside the server."));
                 return false;
             }
 
@@ -530,7 +556,8 @@ namespace TribeBot.Bot.Handlers
 
             if (user == null || !user.Roles.Any(r => r.Id == OfficerRoleId))
             {
-                _ = SendError(message, "You do not have permission to use this command.");
+                _ = message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"{message.Author.Mention}, you do not have permission."));
                 return false;
             }
 

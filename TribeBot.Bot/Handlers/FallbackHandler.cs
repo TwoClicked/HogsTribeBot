@@ -1,6 +1,7 @@
 ﻿using Discord;
 using Discord.WebSocket;
 using System.Threading.Tasks;
+using TribeBot.Bot.UI; // IMPORTANT for EmbedHelper
 
 namespace TribeBot.Bot.Handlers
 {
@@ -13,23 +14,6 @@ namespace TribeBot.Bot.Handlers
             _client = client;
         }
 
-        // ============================================================
-        // Local Embed Builder (same as other handlers)
-        // ============================================================
-        private Embed BuildEmbed(string title, string desc, Color color)
-        {
-            return new EmbedBuilder()
-                .WithTitle(title)
-                .WithDescription(desc)
-                .WithColor(color)
-                .WithFooter($"{System.DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
-                .Build();
-        }
-
-        private Task SendInfo(SocketMessage msg, string title, string text)
-            => msg.Channel.SendMessageAsync(embed: BuildEmbed($"🛡️ {title}", text, Color.Blue));
-
-
         /// <summary>
         /// Called ONLY if no other handler consumed the message.
         /// </summary>
@@ -38,18 +22,19 @@ namespace TribeBot.Bot.Handlers
             if (message.Author.IsBot)
                 return;
 
-            // Only respond to DM fallback messages
+            // Only reply in DMs to avoid cluttering guild channels
             if (message.Channel is IDMChannel)
             {
                 string info =
                     $"{message.Author.Mention}, I didn’t understand that.\n\n" +
                     "Use **!help** to see all available commands.\n" +
-                    "If you still need assistance, please reach out to **BroGuruKiller** (Discord: `guru94vt`). 🐗";
+                    "If you still need assistance, reach out to **BroGuruKiller** (`guru94vt`). 🐗";
 
-                await SendInfo(message, "Unrecognized Command", info);
+                await message.Channel.SendMessageAsync(
+                    embed: EmbedHelper.Info("Unrecognized Command", info));
             }
 
-            // Guild channel fallback = silent ignore
+            // In guild channels: remain silent
         }
     }
 }

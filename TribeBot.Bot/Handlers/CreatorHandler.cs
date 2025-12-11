@@ -1,6 +1,7 @@
 ﻿using Discord;
 using Discord.WebSocket;
 using System.Threading.Tasks;
+using TribeBot.Bot.UI; // IMPORTANT for EmbedHelper
 
 namespace TribeBot.Bot.Handlers
 {
@@ -18,30 +19,6 @@ namespace TribeBot.Bot.Handlers
         }
 
         // ============================================================
-        // Embed Helpers (Local for this handler)
-        // ============================================================
-
-        private Embed BuildEmbed(string title, string desc, Color color)
-        {
-            return new EmbedBuilder()
-                .WithTitle(title)
-                .WithDescription(desc)
-                .WithColor(color)
-                .WithFooter($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
-                .Build();
-        }
-
-        private Task SendSuccess(SocketMessage msg, string text)
-            => msg.Channel.SendMessageAsync(embed: BuildEmbed("🟢 Success", text, Color.Green));
-
-        private Task SendError(SocketMessage msg, string text)
-            => msg.Channel.SendMessageAsync(embed: BuildEmbed("❌ Error", text, Color.Red));
-
-        private Task SendInfo(SocketMessage msg, string title, string text)
-            => msg.Channel.SendMessageAsync(embed: BuildEmbed($"🛡️ {title}", text, Color.Blue));
-
-
-        // ============================================================
         // Entry Point
         // ============================================================
         public async Task<bool> TryHandleAsync(SocketMessage message)
@@ -53,13 +30,12 @@ namespace TribeBot.Bot.Handlers
             if (message.Channel is not IDMChannel)
                 return false;
 
-            if (!message.Content.StartsWith("!promote ", StringComparison.OrdinalIgnoreCase))
+            if (!message.Content.StartsWith("!promote ", System.StringComparison.OrdinalIgnoreCase))
                 return false;
 
             await HandlePromote(message);
             return true;
         }
-
 
         // ============================================================
         // !promote <YouTubeLink>
@@ -70,7 +46,9 @@ namespace TribeBot.Bot.Handlers
 
             if (!link.StartsWith("http"))
             {
-                await SendError(message, "Invalid link. Please provide a valid YouTube URL.");
+                await message.Channel.SendMessageAsync(
+                    embed: EmbedHelper.Error("Invalid link. Please provide a valid YouTube URL.")
+                );
                 return;
             }
 
@@ -79,7 +57,9 @@ namespace TribeBot.Bot.Handlers
 
             if (guildUser == null)
             {
-                await SendError(message, "You must be in the server to use this command.");
+                await message.Channel.SendMessageAsync(
+                    embed: EmbedHelper.Error("You must be in the server to use this command.")
+                );
                 return;
             }
 
@@ -88,7 +68,9 @@ namespace TribeBot.Bot.Handlers
 
             if (!hasRole)
             {
-                await SendError(message, "You must have the **Content Creator** role to use this command.");
+                await message.Channel.SendMessageAsync(
+                    embed: EmbedHelper.Error("You must have the **Content Creator** role to use this command.")
+                );
                 return;
             }
 
@@ -96,11 +78,13 @@ namespace TribeBot.Bot.Handlers
             var promoChannel = _client.GetChannel(PromotionChannelId) as IMessageChannel;
             if (promoChannel == null)
             {
-                await SendError(message, "Promotion channel not found.");
+                await message.Channel.SendMessageAsync(
+                    embed: EmbedHelper.Error("Promotion channel not found.")
+                );
                 return;
             }
 
-            // Post the announcement (PUBLIC MESSAGE SHOULD REMAIN TEXT)
+            // PUBLIC ANNOUNCEMENT (stays plaintext on purpose)
             await promoChannel.SendMessageAsync(
                 "@everyone\n" +
                 $"📣 **New Video Drop!**\n\n" +
@@ -112,8 +96,10 @@ namespace TribeBot.Bot.Handlers
                 "Let’s show them some love! 🐗💥"
             );
 
-            // DM Confirmation
-            await SendSuccess(message, "Your promotion has been posted!");
+            // DM Confirmation using consistent embed
+            await message.Channel.SendMessageAsync(
+                embed: EmbedHelper.Success("Your promotion has been posted!")
+            );
         }
     }
 }

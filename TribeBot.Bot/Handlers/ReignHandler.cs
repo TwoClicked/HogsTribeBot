@@ -1,9 +1,11 @@
 ﻿using Discord;
 using Discord.WebSocket;
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using TribeBot.Core.Interfaces;
 using TribeBot.Data.Interfaces;
+using TribeBot.Bot.UI; // <-- EmbedHelper here!
 
 namespace TribeBot.Bot.Handlers
 {
@@ -34,14 +36,28 @@ namespace TribeBot.Bot.Handlers
             _dataStore = dataStore;
         }
 
+        private IMessageChannel OfficerLog =>
+            _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
+
+        private Task Log(string title, string user, string action)
+            => OfficerLog?.SendMessageAsync(embed:
+                EmbedHelper.Log(title, new()
+                {
+                    { "User", user },
+                    { "Action", action }
+                })) ?? Task.CompletedTask;
+
+        // ======================================================================
+        // ROOT HANDLER
+        // ======================================================================
         public async Task<bool> TryHandleAsync(SocketMessage message)
         {
-            if (message.Author.IsBot) return false;
+            if (message.Author.IsBot)
+                return false;
 
-            string content = message.Content.Trim();
+            string content = message.Content.Trim().ToLower();
 
-            // Main commands
-            switch (content.ToLower())
+            switch (content)
             {
                 case "!applyreign":
                     await ApplyReign(message);
@@ -68,7 +84,6 @@ namespace TribeBot.Bot.Handlers
                     return true;
             }
 
-            // Commands with arguments
             if (content.StartsWith("!exempt"))
             {
                 await SetExempt(message, true);
@@ -90,94 +105,44 @@ namespace TribeBot.Bot.Handlers
             return false;
         }
 
-        // ============================================================
-        // Helper: Embed Builder
-        // ============================================================
-
-        private Embed BuildEmbed(string title, string desc, Color color)
-        {
-            return new EmbedBuilder()
-                .WithTitle(title)
-                .WithDescription(desc)
-                .WithColor(color)
-                .WithFooter($"{System.DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
-                .Build();
-        }
-
-        private async Task SendError(SocketMessage msg, string text)
-        {
-            await msg.Channel.SendMessageAsync(embed:
-                BuildEmbed("❌ Error", text, Color.Red));
-        }
-
-        private async Task SendSuccess(SocketMessage msg, string text)
-        {
-            await msg.Channel.SendMessageAsync(embed:
-                BuildEmbed("🟢 Success", text, Color.Green));
-        }
-
-        private async Task SendWarning(SocketMessage msg, string text)
-        {
-            await msg.Channel.SendMessageAsync(embed:
-                BuildEmbed("⚠️ Warning", text, Color.Orange));
-        }
-
-        private async Task SendInfo(SocketMessage msg, string title, string text)
-        {
-            await msg.Channel.SendMessageAsync(embed:
-                BuildEmbed($"🛡️ {title}", text, Color.Blue));
-        }
-
-        // ============================================================
-        // USER LEAVES REIGN
-        // ============================================================
-
+        // ======================================================================
+        // !leavereign
+        // ======================================================================
         private async Task LeaveReign(SocketMessage message)
         {
             var member = await _memberService.GetMemberByDiscordIdAsync(message.Author.Id.ToString());
-
             if (member == null)
             {
-                await SendError(message, "You are not registered.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("You are not registered."));
                 return;
             }
 
             bool removed = await _reignService.RemoveMemberFromReignAsync(message.Author.Id.ToString());
             if (!removed)
             {
-                await SendError(message, "You are not part of the current reign.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("You are not part of the current reign."));
                 return;
             }
 
-            await SendSuccess(message, $"👋 {message.Author.Username}, you have left the current reign.");
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success($"👋 {message.Author.Username}, you have left the current reign."));
 
-            // Officer log
-            var log = _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
-            if (log != null)
-            {
-                var logEmbed = new EmbedBuilder()
-                    .WithTitle("📘 Reign Update — Self Removal")
-                    .AddField("User", message.Author.Username, true)
-                    .AddField("Action", "Left the reign", true)
-                    .WithColor(new Color(0, 110, 255))
-                    .WithFooter($"{System.DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
-                    .Build();
-
-                await log.SendMessageAsync(embed: logEmbed);
-            }
+            await Log("Reign Update — Self Removal", message.Author.Username, "Left the reign");
         }
 
-        // ============================================================
-        // OFFICER REMOVES USER
-        // ============================================================
-
+        // ======================================================================
+        // !removereign
+        // ======================================================================
         private async Task RemoveReignMember(SocketMessage message)
         {
             if (!await IsOfficer(message)) return;
 
             if (message.MentionedUsers.Count == 0)
             {
-                await SendError(message, "Usage: `!removereign @user`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Usage: `!removereign @user`"));
                 return;
             }
 
@@ -186,44 +151,33 @@ namespace TribeBot.Bot.Handlers
 
             if (!removed)
             {
-                await SendError(message, $"{target.Username} is not part of the current reign.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"{target.Username} is not in the current reign."));
                 return;
             }
 
-            await SendSuccess(message, $"🗑 {target.Username} has been removed from the reign.");
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success($"🗑 {target.Username} has been removed from the reign."));
 
-            // Officer log
-            var log = _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
-            if (log != null)
-            {
-                var logEmbed = new EmbedBuilder()
-                    .WithTitle("📘 Reign Update — Officer Removal")
-                    .AddField("Removed", target.Username, true)
-                    .AddField("By", message.Author.Username, true)
-                    .WithColor(new Color(0, 110, 255))
-                    .WithFooter($"{System.DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
-                    .Build();
-
-                await log.SendMessageAsync(embed: logEmbed);
-            }
+            await Log("Reign Update — Officer Removal", target.Username, $"Removed by {message.Author.Username}");
         }
 
-        // ============================================================
-        // APPLY TO REIGN
-        // ============================================================
-
+        // ======================================================================
+        // !applyreign
+        // ======================================================================
         private async Task ApplyReign(SocketMessage message)
         {
-            var locked = await _reignService.GetReignLockedAsync();
-            if (locked)
+            if (await _reignService.GetReignLockedAsync())
             {
-                await SendWarning(message, "Reign is locked. Contact an officer.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("Reign is locked. Contact an officer."));
                 return;
             }
 
             if (message.Channel.Id != VrSubmissionChannelId)
             {
-                await SendError(message, $"You may only apply in <#{VrSubmissionChannelId}>.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"You may only apply in <#{VrSubmissionChannelId}>."));
                 return;
             }
 
@@ -234,31 +188,36 @@ namespace TribeBot.Bot.Handlers
 
             if (activeStrikes > 0)
             {
-                await SendError(message, $"You have **{activeStrikes} Reign Strike(s)**.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"You have **{activeStrikes} Reign Strike(s)**."));
                 return;
             }
 
             var member = await _memberService.GetMemberByDiscordIdAsync(message.Author.Id.ToString());
             if (member == null)
             {
-                await SendError(message, "Please register first using `!register`.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Please register first using `!register`."));
                 return;
             }
 
             await _reignService.ApplyAsync(message.Author.Id.ToString());
-            await SendSuccess(message, "You have been added to the Viking Reign!");
+
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success("You have been added to the Viking Reign!"));
         }
 
-        // ============================================================
-        // LIST REIGN APPLICANTS
-        // ============================================================
-
+        // ======================================================================
+        // !listreign
+        // ======================================================================
         private async Task ListReign(SocketMessage message)
         {
             var results = await _reignService.GetCurrentRegistrationsSortedAsync();
+
             if (results.Count == 0)
             {
-                await SendInfo(message, "Viking Reign", "Nobody has applied yet.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Info("Viking Reign", "Nobody has applied yet."));
                 return;
             }
 
@@ -271,25 +230,25 @@ namespace TribeBot.Bot.Handlers
                 pos++;
             }
 
-            await SendInfo(message, "Viking Reign Applicants", msg);
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info("Viking Reign Applicants", msg));
         }
 
-        // ============================================================
-        // CLEAR REIGN (OFFICER)
-        // ============================================================
-
+        // ======================================================================
+        // !clearreign
+        // ======================================================================
         private async Task ClearReign(SocketMessage message)
         {
             if (!await IsOfficer(message)) return;
 
             await _reignService.ClearAsync();
-            await SendSuccess(message, "Reign list cleared.");
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success("Reign list cleared."));
         }
 
-        // ============================================================
-        // LOCK / UNLOCK REIGN
-        // ============================================================
-
+        // ======================================================================
+        // !lockreign
+        // ======================================================================
         private async Task LockReign(SocketMessage message)
         {
             if (!await IsOfficer(message)) return;
@@ -297,28 +256,34 @@ namespace TribeBot.Bot.Handlers
             await _reignService.SetReignLockedAsync(true);
             await _fineService.ReduceReignStrikesAsync();
 
-            await SendWarning(message, "The reign is now **LOCKED**.");
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Warning("The reign is now **LOCKED**."));
         }
 
+        // ======================================================================
+        // !unlockreign
+        // ======================================================================
         private async Task UnlockReign(SocketMessage message)
         {
             if (!await IsOfficer(message)) return;
 
             await _reignService.SetReignLockedAsync(false);
-            await SendSuccess(message, "The reign is now **UNLOCKED**.");
+
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success("The reign is now **UNLOCKED**."));
         }
 
-        // ============================================================
-        // EXEMPT / UNEXEMPT
-        // ============================================================
-
+        // ======================================================================
+        // !exempt / !unexempt
+        // ======================================================================
         private async Task SetExempt(SocketMessage message, bool exempt)
         {
             if (!await IsOfficer(message)) return;
 
             if (message.MentionedUsers.Count == 0)
             {
-                await SendError(message, "Usage: `!exempt @user` or `!unexempt @user`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Usage: `!exempt @user` or `!unexempt @user`"));
                 return;
             }
 
@@ -327,35 +292,39 @@ namespace TribeBot.Bot.Handlers
 
             if (member == null)
             {
-                await SendError(message, $"{target.Username} is not registered.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"{target.Username} is not registered."));
                 return;
             }
 
             member.IsExempt = exempt;
-            member.LastUpdatedUTC = System.DateTime.UtcNow;
+            member.LastUpdatedUTC = DateTime.UtcNow;
             await _memberService.RegisterOrUpdateAsync(member);
 
             string status = exempt ? "EXEMPT" : "NOT EXEMPT";
-            await SendSuccess(message, $"{target.Username} is now **{status}** from weekly donations.");
+
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success($"{target.Username} is now **{status}** from weekly donations."));
         }
 
-        // ============================================================
-        // PERMISSION CHECK
-        // ============================================================
-
+        // ======================================================================
+        // Officer Check
+        // ======================================================================
         private async Task<bool> IsOfficer(SocketMessage message)
         {
-            if (message.Channel is not SocketGuildChannel gc)
+            if (message.Channel is not SocketGuildChannel sg)
             {
-                await SendError(message, "This command must be used inside the server.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("This command must be used inside the server."));
                 return false;
             }
 
-            var user = gc.GetUser(message.Author.Id);
+            var user = sg.GetUser(message.Author.Id);
 
             if (user == null || !user.Roles.Any(r => r.Id == ReignOfficerRoleId))
             {
-                await SendError(message, "You do not have permission to perform this action.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("You do not have permission to perform this action."));
                 return false;
             }
 

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using TribeBot.Core.Entities;
 using TribeBot.Core.Interfaces;
+using TribeBot.Bot.UI; // <-- IMPORTANT for EmbedHelper
 
 namespace TribeBot.Bot.Handlers
 {
@@ -30,48 +31,16 @@ namespace TribeBot.Bot.Handlers
             _memberService = memberService;
         }
 
-        // ============================================================
-        // EMBED HELPERS (local)
-        // ============================================================
-        private Embed Build(string title, string desc, Color c) =>
-            new EmbedBuilder()
-                .WithTitle(title)
-                .WithDescription(desc)
-                .WithColor(c)
-                .WithFooter($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
-                .Build();
-
-        private Task Success(SocketMessage m, string t) =>
-            m.Channel.SendMessageAsync(embed: Build("🟢 Success", t, Color.Green));
-
-        private Task Error(SocketMessage m, string t) =>
-            m.Channel.SendMessageAsync(embed: Build("❌ Error", t, Color.Red));
-
-        private Task Warning(SocketMessage m, string t) =>
-            m.Channel.SendMessageAsync(embed: Build("⚠️ Warning", t, Color.Orange));
-
-        private Task Info(SocketMessage m, string title, string body) =>
-            m.Channel.SendMessageAsync(embed: Build($"🛡️ {title}", body, Color.Blue));
-
         private IMessageChannel OfficerLog =>
             _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
 
         private Task Log(string title, Dictionary<string, string> fields)
-        {
-            var eb = new EmbedBuilder()
-                .WithTitle($"📘 {title}")
-                .WithColor(new Color(0, 110, 255))
-                .WithFooter($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
+            => OfficerLog?.SendMessageAsync(embed: EmbedHelper.Log(title, fields))
+               ?? Task.CompletedTask;
 
-            foreach (var f in fields)
-                eb.AddField(f.Key, f.Value, true);
-
-            return OfficerLog?.SendMessageAsync(embed: eb.Build()) ?? Task.CompletedTask;
-        }
-
-        // ============================================================
+        // ============================================================================
         // ROOT ENTRY
-        // ============================================================
+        // ============================================================================
         public async Task<bool> TryHandleAsync(SocketMessage message)
         {
             if (message.Author.IsBot) return false;
@@ -108,6 +77,7 @@ namespace TribeBot.Bot.Handlers
                 return true;
             }
 
+            // DM voting only
             if (message.Channel is IDMChannel && content.StartsWith("!vote "))
             {
                 await SubmitVote(message);
@@ -117,9 +87,9 @@ namespace TribeBot.Bot.Handlers
             return false;
         }
 
-        // ============================================================
+        // ============================================================================
         // CREATE POLL
-        // ============================================================
+        // ============================================================================
         private async Task CreatePoll(SocketMessage message)
         {
             if (!IsOfficer(message)) return;
@@ -130,22 +100,25 @@ namespace TribeBot.Bot.Handlers
 
             if (quoted.Count < 3)
             {
-                await Error(message,
-                    "You must provide a question, date, and at least **2 options**.\n\n" +
-                    "**Example:**\n" +
-                    "`!pollcreate \"Your question\" 2025-03-01 \"Option A\" \"Option B\"`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error(
+                        "You must provide a question, date, and at least **2 options**.\n\n" +
+                        "**Example:**\n" +
+                        "`!pollcreate \"Your question\" 2025-03-01 \"Option A\" \"Option B\"`"
+                    ));
                 return;
             }
 
             string question = quoted[0];
 
-            // Extract YYYY-MM-DD
+            // Extract date
             string after = message.Content.Substring(message.Content.IndexOf(question) + question.Length + 2);
             var dateMatch = System.Text.RegularExpressions.Regex.Match(after, @"\d{4}-\d{2}-\d{2}");
 
             if (!dateMatch.Success || !DateTime.TryParse(dateMatch.Value, out DateTime endDate))
             {
-                await Error(message, "Invalid or missing date. Use: `YYYY-MM-DD`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Invalid or missing date. Use: `YYYY-MM-DD`"));
                 return;
             }
 
@@ -164,19 +137,21 @@ namespace TribeBot.Bot.Handlers
 
             await _voteService.CreatePollAsync(poll);
 
-            await Info(message, "Poll Created",
-                $"📊 **New Poll Created**\n\n" +
-                $"**ID:** `{pollId}`\n" +
-                $"**Question:** {question}\n" +
-                $"**Ends:** `{endDate:yyyy-MM-dd}`\n\n" +
-                $"DM ballots are being delivered…");
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info("Poll Created",
+                    $"📊 **New Poll Created**\n\n" +
+                    $"**ID:** `{pollId}`\n" +
+                    $"**Question:** {question}\n" +
+                    $"**Ends:** `{endDate:yyyy-MM-dd}`\n\n" +
+                    $"DM ballots are being delivered…"
+                ));
 
             _ = Task.Run(async () => await SendDMBallots(poll));
         }
 
-        // ============================================================
-        // SEND DM BALLOTS  (plaintext DM, embeds not needed here)
-        // ============================================================
+        // ============================================================================
+        // SEND DM BALLOTS (plaintext — correct)
+        // ============================================================================
         private async Task SendDMBallots(PollRecord poll)
         {
             var guild = _client.GetGuild(GuildId);
@@ -187,7 +162,8 @@ namespace TribeBot.Bot.Handlers
 
             var targets = hogs.Members.Where(x => valid.Contains(x.Id.ToString())).ToList();
 
-            int sent = 0, failed = 0;
+            int sent = 0;
+            int failed = 0;
 
             foreach (var u in targets)
             {
@@ -202,11 +178,11 @@ namespace TribeBot.Bot.Handlers
                     await dm.SendMessageAsync(
                         $"📊 **New Poll**\n" +
                         $"**{poll.Question}**\n\n" +
-                        "**Options:**\n" +
-                        opt + "\n" +
+                        "**Options:**\n" + opt + "\n" +
                         "Vote using:\n`!vote <number>`\n\n" +
                         $"Poll ID: `{poll.PollId}`\n" +
-                        $"Ends: {poll.EndDateUtc:yyyy-MM-dd}");
+                        $"Ends: {poll.EndDateUtc:yyyy-MM-dd}"
+                    );
 
                     sent++;
                     await Task.Delay(350);
@@ -220,6 +196,7 @@ namespace TribeBot.Bot.Handlers
                         { "User", u.Id.ToString() },
                         { "Poll", poll.PollId }
                     });
+
                     await Task.Delay(650);
                 }
             }
@@ -234,16 +211,17 @@ namespace TribeBot.Bot.Handlers
             });
         }
 
-        // ============================================================
+        // ============================================================================
         // LIST POLLS
-        // ============================================================
+        // ============================================================================
         private async Task ListPolls(SocketMessage message)
         {
             var polls = await _voteService.GetAllPollsAsync();
 
-            if (polls.Count == 0)
+            if (!polls.Any())
             {
-                await Warning(message, "No polls currently exist.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("No polls currently exist."));
                 return;
             }
 
@@ -262,9 +240,9 @@ namespace TribeBot.Bot.Handlers
             await message.Channel.SendMessageAsync(msg);
         }
 
-        // ============================================================
+        // ============================================================================
         // REMOVE POLL
-        // ============================================================
+        // ============================================================================
         private async Task RemovePoll(SocketMessage message)
         {
             if (!IsOfficer(message)) return;
@@ -272,25 +250,28 @@ namespace TribeBot.Bot.Handlers
             var parts = message.Content.Split(" ", 2);
             if (parts.Length < 2)
             {
-                await Warning(message, "Usage: `!pollremove <pollId>`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("Usage: `!pollremove <pollId>`"));
                 return;
             }
 
             string pollId = parts[1].Trim();
             await _voteService.RemovePollAsync(pollId);
 
-            await Success(message, $"Poll `{pollId}` has been removed.");
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success($"Poll `{pollId}` has been removed."));
         }
 
-        // ============================================================
+        // ============================================================================
         // SHOW POLL RESULTS
-        // ============================================================
+        // ============================================================================
         private async Task ShowPoll(SocketMessage message)
         {
             var parts = message.Content.Split(" ", 2);
             if (parts.Length < 2)
             {
-                await Warning(message, "Usage: `!pollshow <pollId>`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("Usage: `!pollshow <pollId>`"));
                 return;
             }
 
@@ -299,14 +280,14 @@ namespace TribeBot.Bot.Handlers
 
             if (poll == null)
             {
-                await Error(message, "Poll not found.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Poll not found."));
                 return;
             }
 
             var results = await _voteService.GetAnonymousResultsAsync(pollId);
 
-            string body =
-                $"Ends: `{poll.EndDateUtc:yyyy-MM-dd}`\n\n";
+            string body = $"Ends: `{poll.EndDateUtc:yyyy-MM-dd}`\n\n";
 
             foreach (var opt in poll.Options)
             {
@@ -314,15 +295,15 @@ namespace TribeBot.Bot.Handlers
                 body += $"• **{opt}** — {count} votes\n";
             }
 
-            int total = results.Values.Sum();
-            body += $"\n**Total Votes:** {total}";
+            body += $"\n**Total Votes:** {results.Values.Sum()}";
 
-            await Info(message, $"Poll Results", $"**{poll.Question}**\n\n{body}");
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info("Poll Results", $"**{poll.Question}**\n\n{body}"));
         }
 
-        // ============================================================
+        // ============================================================================
         // OFFICER POLL RESULTS
-        // ============================================================
+        // ============================================================================
         private async Task OfficerResults(SocketMessage message)
         {
             if (!IsOfficer(message)) return;
@@ -330,7 +311,8 @@ namespace TribeBot.Bot.Handlers
             var parts = message.Content.Split(" ", 2);
             if (parts.Length < 2)
             {
-                await Warning(message, "Usage: `!pollofficer <pollId>`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("Usage: `!pollofficer <pollId>`"));
                 return;
             }
 
@@ -339,13 +321,14 @@ namespace TribeBot.Bot.Handlers
 
             if (poll == null)
             {
-                await Error(message, "Poll not found.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Poll not found."));
                 return;
             }
 
+            // Officer results are usually VERY long → raw text is correct here
             var results = await _voteService.GetOfficerResultsAsync(pollId);
 
-            // Too large for an embed → raw text
             string msg =
                 $"📊 **Officer Results — {poll.Question}**\n" +
                 $"Ends: {poll.EndDateUtc:yyyy-MM-dd}\n\n";
@@ -369,16 +352,17 @@ namespace TribeBot.Bot.Handlers
             await message.Channel.SendMessageAsync(msg);
         }
 
-        // ============================================================
+        // ============================================================================
         // SUBMIT VOTE (DM ONLY)
-        // ============================================================
+        // ============================================================================
         private async Task SubmitVote(SocketMessage message)
         {
             var parts = message.Content.Split(" ");
 
             if (parts.Length < 2 || !int.TryParse(parts[1], out int index))
             {
-                await Error(message, "Usage: `!vote <number>`");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Usage: `!vote <number>`"));
                 return;
             }
 
@@ -390,13 +374,15 @@ namespace TribeBot.Bot.Handlers
 
             if (active == null)
             {
-                await Error(message, "No active poll to vote in.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("No active poll to vote in."));
                 return;
             }
 
             if (index < 1 || index > active.Options.Count)
             {
-                await Error(message, "Invalid option number.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Invalid option number."));
                 return;
             }
 
@@ -414,25 +400,28 @@ namespace TribeBot.Bot.Handlers
 
             await _voteService.AddOrUpdateVoteAsync(vote);
 
-            await Success(message, $"Your vote has been recorded.\n**Choice:** {choice}");
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success($"Your vote has been recorded.\n**Choice:** {choice}"));
         }
 
-        // ============================================================
+        // ============================================================================
         // HELPERS
-        // ============================================================
+        // ============================================================================
         private bool IsOfficer(SocketMessage message)
         {
-            if (message.Channel is not SocketGuildChannel gc)
+            if (message.Channel is not SocketGuildChannel)
             {
-                _ = Error(message, "This command must be used inside the server.");
+                _ = message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("This command must be used inside the server."));
                 return false;
             }
 
-            var user = gc.GetUser(message.Author.Id);
+            var user = (message.Channel as SocketGuildChannel)!.GetUser(message.Author.Id);
 
             if (user == null || !user.Roles.Any(r => r.Id == OfficerRoleId))
             {
-                _ = Error(message, $"{message.Author.Mention}, you do not have permission.");
+                _ = message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"{message.Author.Mention}, you do not have permission."));
                 return false;
             }
 

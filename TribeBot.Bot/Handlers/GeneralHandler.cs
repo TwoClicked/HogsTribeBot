@@ -319,14 +319,7 @@ namespace TribeBot.Bot.Handlers
 
             var donations = await _donationService.GetTotalForUserThisWeekAsync(id);
 
-            string donationStatus =
-                member.IsExempt ? "🟦 EXEMPT" :
-                donations > 0 ? "Continue below…"
-                : "❌ UNPAID";
-
-            donationStatus = member.IsExempt
-                ? "🟦 EXEMPT"
-                : donations > 0 ? "Continue below…" : "❌ UNPAID";
+            string donationStatus = member.IsExempt ? "🟦 EXEMPT" : donations > 0 ? "✅ PAID" : "❌ UNPAID";
 
             string info =
                 $"**Name:** {member.IngameName}\n" +
@@ -390,37 +383,45 @@ namespace TribeBot.Bot.Handlers
             var donations = await _donationService.GetTotalForUserThisWeekAsync(id);
             string donationStatus =
                 member.IsExempt ? "🟦 EXEMPT" :
-                donations > 0 ? "Continue below…" : "❌ UNPAID";
+                donations > 0 ? "✅ PAID" : "❌ UNPAID";
 
             var fines = await _fineService.GetFinesForUserAsync(id);
 
-            string unpaid =
-                fines.Where(f => !f.IsPaid).Any()
-                    ? string.Join("", fines.Where(f => !f.IsPaid)
-                        .Select(f => $"• {f.Amount:N0} — {f.FineType} — FineID `{f.FineId}` ({f.PaidAmount}/{f.Amount})\n"))
-                    : "• None\n";
+            // Build fine lists
+            string unpaid = fines
+                .Where(f => !f.IsPaid)
+                .Select(f => $"• {f.Amount:N0} — `{f.FineType}` — **{f.FineId}** ({f.PaidAmount}/{f.Amount})")
+                .DefaultIfEmpty("• None")
+                .Aggregate((a, b) => a + "\n" + b);
 
-            string paid =
-                fines.Where(f => f.IsPaid).Any()
-                    ? string.Join("", fines.Where(f => f.IsPaid)
-                        .Select(f => $"• {f.Amount:N0} — {f.FineType} — FineID `{f.FineId}` — PAID\n"))
-                    : "• None\n";
+            string paid = fines
+                .Where(f => f.IsPaid)
+                .Select(f => $"• {f.Amount:N0} — `{f.FineType}` — **{f.FineId}** — PAID")
+                .DefaultIfEmpty("• None")
+                .Aggregate((a, b) => a + "\n" + b);
 
-            string profile =
-                $"**Name:** {member.IngameName}\n" +
-                $"**ID:** {member.IngameId}\n" +
-                $"**Might:** {member.Might:N0}\n" +
-                $"**Kills:** {member.KillPoints:N0}\n" +
-                $"**Collector Level:** {member.CollectorLevel}\n" +
-                $"**Reign Points:** {member.ReignPoints}\n" +
-                $"**Exempt:** {member.IsExempt}\n\n" +
-                $"🏦 **Donation:** {donationStatus}\n\n" +
-                $"💀 **Unpaid Fines:**\n{unpaid}\n\n" +
-                $"🟩 **Paid Fines:**\n{paid}\n\n" +
-                $"🕒 **Last Updated:** {member.LastUpdatedUTC:yyyy-MM-dd HH:mm} UTC";
+            // Build embed
+            var embed = new EmbedBuilder()
+                .WithTitle($"📘 Profile for {target.Username}")
+                .WithColor(Color.Blue)
+                .AddField("👤 Basic Info",
+                    $"**Name:** {member.IngameName}\n" +
+                    $"**ID:** {member.IngameId}\n" +
+                    $"**Exempt:** {(member.IsExempt ? "Yes" : "No")}")
+                .AddField("⚔ Stats",
+                    $"**Might:** {member.Might:N0}\n" +
+                    $"**Kills:** {member.KillPoints:N0}\n" +
+                    $"**Collector Level:** {member.CollectorLevel}\n" +
+                    $"**Reign Points:** {member.ReignPoints}")
+                .AddField("🏦 Donation Status", donationStatus, true)
+                .AddField("💀 Unpaid Fines", unpaid.Length > 1024 ? unpaid[..1024] : unpaid)
+                .AddField("🟩 Paid Fines", paid.Length > 1024 ? paid[..1024] : paid)
+                .WithFooter($"Last Updated: {member.LastUpdatedUTC:yyyy-MM-dd HH:mm} UTC")
+                .Build();
 
-            await SendLong(message.Channel, $"📘 **Profile for {target.Mention}**\n\n{profile}");
+            await message.Channel.SendMessageAsync(embed: embed);
         }
+
 
         // ======================================================================
         // HELPERS

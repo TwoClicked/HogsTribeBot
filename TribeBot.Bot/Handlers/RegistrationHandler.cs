@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using TribeBot.Core.Flows.Interfaces;
 using TribeBot.Core.Flows;
 using TribeBot.Core.Interfaces;
+using TribeBot.Bot.UI; // <-- IMPORTANT for EmbedHelper
 
 namespace TribeBot.Bot.Handlers
 {
@@ -27,32 +28,6 @@ namespace TribeBot.Bot.Handlers
         }
 
         // ================================================================
-        // EMBED HELPERS (local Style-2 utilities)
-        // ================================================================
-        private Embed BuildEmbed(string title, string desc, Color color)
-        {
-            return new EmbedBuilder()
-                .WithTitle(title)
-                .WithDescription(desc)
-                .WithColor(color)
-                .WithFooter($"{System.DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
-                .Build();
-        }
-
-        private Task SendError(SocketMessage m, string text)
-            => m.Channel.SendMessageAsync(embed: BuildEmbed("❌ Error", text, Color.Red));
-
-        private Task SendWarning(SocketMessage m, string text)
-            => m.Channel.SendMessageAsync(embed: BuildEmbed("⚠️ Warning", text, Color.Orange));
-
-        private Task SendSuccess(SocketMessage m, string text)
-            => m.Channel.SendMessageAsync(embed: BuildEmbed("🟢 Success", text, Color.Green));
-
-        private Task SendInfo(SocketMessage m, string title, string text)
-            => m.Channel.SendMessageAsync(embed: BuildEmbed($"🛡️ {title}", text, Color.Blue));
-
-
-        // ================================================================
         // MAIN ENTRY
         // ================================================================
         public async Task<bool> TryHandleAsync(SocketMessage message)
@@ -62,14 +37,14 @@ namespace TribeBot.Bot.Handlers
 
             ulong userId = message.Author.Id;
 
-            // If a flow is already active, forward the message into it
+            // If user is already mid-flow, send message into that flow
             if (_flowManager.IsInFlow(userId))
             {
                 var flow = _flowManager.GetFlow(userId);
                 return await flow!.HandleAsync(message);
             }
 
-            // Detect starting command
+            // Detect start command
             if (!message.Content.Equals("!register", System.StringComparison.OrdinalIgnoreCase))
                 return false;
 
@@ -79,37 +54,42 @@ namespace TribeBot.Bot.Handlers
 
             if (user == null)
             {
-                await SendError(message, "You must be in the server to register.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("You must be in the server to register."));
                 return true;
             }
 
-            // Must have the HOGS role
+            // Must have required role
             if (!user.Roles.Any(r => r.Id == HogsRoleId))
             {
-                await SendError(message, "You do not have the **Member HOGS** role.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("You do not have the **Member HOGS** role."));
                 return true;
             }
 
-            // Try DMing user to begin flow
+            // Attempt to DM user to begin flow
             try
             {
                 var dm = await message.Author.CreateDMChannelAsync();
                 await dm.SendMessageAsync(
                     "👋 Let's get you registered!\n" +
                     "Enter your **in-game name**.\n\n" +
-                    "Type **`cancel`** to stop at any time or **`back`** to return to the previous question.");
+                    "Type **`cancel`** to stop at any time, or **`back`** to return to previous questions."
+                );
             }
             catch
             {
-                await SendError(message, "I was unable to DM you. Please enable private messages and try again.");
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("I was unable to DM you. Please enable private messages and try again."));
                 return true;
             }
 
-            // Start flow
+            // Start the registration flow
             var newFlow = new RegistrationFlow(userId, _memberService, _flowManager, _client);
             _flowManager.StartFlow(userId, newFlow);
 
-            await SendSuccess(message, "Registration started! Please check your DMs.");
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success("Registration started! Please check your DMs."));
 
             return true;
         }

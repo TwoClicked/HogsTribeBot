@@ -5,6 +5,7 @@ using Google.Apis.Sheets.v4.Data;
 using TribeBot.Core.Entities;
 using TribeBot.Data.Interfaces;
 
+
 namespace TribeBot.Data.GoogleSheets
 {
     public class GoogleSheetsDataStore : IGoogleSheetsDataStore
@@ -18,6 +19,8 @@ namespace TribeBot.Data.GoogleSheets
         private const string FinesSheet = "Fines";
         private const string PollSheet = "Polls";
         private const string PollVotesSheet = "PollVotes";
+        private const string ScheduledEventsSheet = "ScheduledEvents";
+
 
         //Multiple use Gid's 
         private const int PollsSheetId = 1167930524;
@@ -773,5 +776,98 @@ namespace TribeBot.Data.GoogleSheets
             await update.ExecuteAsync();
         }
 
+        public async Task AddScheduledEventAsync(ScheduledEvent evt)
+        {
+            var values = new List<object>
+            {
+                evt.EventId,
+                evt.EventName,
+                evt.EventDateUtc.ToString("o"),
+                evt.ReminderOffsetHours,
+                evt.Message,
+                evt.CreatedBy,
+                evt.CreatedAtUtc.ToString("o"),
+                evt.ReminderSent,
+                evt.Completed
+            };
+
+            var append = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange { Values = new List<IList<object>> { values } },
+                _spreadsheetId,
+                $"{ScheduledEventsSheet}!A:I");
+
+            append.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+            await append.ExecuteAsync();
+        }
+
+        public async Task<List<ScheduledEvent>> GetAllScheduledEventsAsync()
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{ScheduledEventsSheet}!A2:I");
+
+            var response = await request.ExecuteAsync();
+            var rows = response.Values;
+            var list = new List<ScheduledEvent>();
+
+            if (rows == null) return list;
+
+            foreach ( var row in rows)
+            {
+                if (row.Count < 9) continue;
+
+                // Skip row if EventDateUtc is not a valid ISO string
+                if (!DateTime.TryParse(row[2].ToString(), out var parsedDate))
+                    continue;
+
+                list.Add(new ScheduledEvent
+                {
+                    EventId = row[0].ToString(),
+                    EventName = row[1].ToString(),
+                    EventDateUtc = DateTime.Parse(row[2].ToString()),
+                    ReminderOffsetHours = int.Parse(row[3].ToString()),
+                    Message = row[4].ToString(),
+                    CreatedBy = row[5].ToString(),
+                    CreatedAtUtc = DateTime.Parse(row[6].ToString()),
+                    ReminderSent = bool.Parse(row[7].ToString()),
+                    Completed = bool.Parse(row[8].ToString())
+                });
+            }
+
+            return list;
+        }
+
+        public async Task UpdateScheduledEventAsync(ScheduledEvent evt)
+        {
+            var all = await GetAllScheduledEventsAsync();
+
+            int index = all.FindIndex(e => e.EventId == evt.EventId);
+
+            if (index == -1) return;
+
+            int row = index + 2;
+
+            var values = new List<object>
+            {
+                evt.EventId,
+                evt.EventName,
+                evt.EventDateUtc.ToString("o"),
+                evt.ReminderOffsetHours,
+                evt.Message,
+                evt.CreatedBy,
+                evt.CreatedAtUtc.ToString("o"),
+                evt.ReminderSent,
+                evt.Completed
+            };
+
+            var update = _sheetsService.Spreadsheets.Values.Update(
+                new ValueRange { Values = new List<IList<object>> { values } },
+                _spreadsheetId,
+                $"{ScheduledEventsSheet}!A{row}:I{row}"
+                );
+
+            update.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+            await update.ExecuteAsync();
+        }
     }
 }

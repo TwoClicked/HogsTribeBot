@@ -2,7 +2,7 @@
 using Discord.WebSocket;
 using System.Linq;
 using System.Threading.Tasks;
-using TribeBot.Bot.UI;
+using TribeBot.Bot.UI; // <-- IMPORTANT for EmbedHelper, HelpEmbeds, HelpComponents
 
 namespace TribeBot.Bot.Handlers
 {
@@ -20,24 +20,6 @@ namespace TribeBot.Bot.Handlers
         }
 
         // ============================================================
-        // LOCAL EMBED HELPERS (Style-2)
-        // ============================================================
-        private Embed BuildEmbed(string title, string desc, Color color)
-        {
-            return new EmbedBuilder()
-                .WithTitle(title)
-                .WithDescription(desc)
-                .WithColor(color)
-                .WithFooter($"{System.DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC")
-                .Build();
-        }
-
-        private Task SendError(SocketMessage msg, string text)
-            => msg.Channel.SendMessageAsync(embed:
-                BuildEmbed("❌ Error", text, Color.Red));
-
-
-        // ============================================================
         // MAIN COMMAND
         // ============================================================
         public async Task<bool> TryHandleAsync(SocketMessage message)
@@ -47,10 +29,11 @@ namespace TribeBot.Bot.Handlers
 
             string content = message.Content.Trim().ToLower();
 
+            // If the message does NOT begin with !help → we skip
             if (!content.StartsWith("!help"))
                 return false;
 
-            // EXACT command: !help → show menu
+            // EXACT command: !help → show main help menu
             if (content == "!help")
             {
                 await message.Channel.SendMessageAsync(
@@ -60,20 +43,26 @@ namespace TribeBot.Bot.Handlers
                 return true;
             }
 
-            // Anything ELSE → invalid help command
-            await SendError(message,
-                "Unknown help option.\nUse **`!help`** to open the help menu.");
+            // Anything ELSE → invalid use of !help
+            await message.Channel.SendMessageAsync(
+                embed: EmbedHelper.Error(
+                    "Unknown help option.\nUse **`!help`** to open the help menu."
+                )
+            );
 
             return true;
         }
 
-
         // ============================================================
-        // INTERACTIONS (unchanged)
+        // INTERACTIONS — buttons & menu navigation
         // ============================================================
         private async Task HandleInteractionAsync(SocketInteraction interaction)
         {
             if (interaction is not SocketMessageComponent component)
+                return;
+
+            //Filter for other buttons
+            if (!IsHelpComponent(component.Data.CustomId))
                 return;
 
             string id = component.Data.CustomId;
@@ -88,6 +77,7 @@ namespace TribeBot.Bot.Handlers
             if (id.EndsWith("_btn"))
                 selected = id.Replace("_btn", "");
 
+            // Build next help page
             Embed embed = selected switch
             {
                 "general" => HelpEmbeds.General(),
@@ -108,6 +98,14 @@ namespace TribeBot.Bot.Handlers
             });
         }
 
+        private bool IsHelpComponent(string customId)
+        {
+            return customId.StartsWith("help_")
+                || customId.EndsWith("_btn")
+                || customId == "helpMenu";
+        }
+
+        // Identify currently selected help category
         private string GetSelectedCategory(SocketMessageComponent component)
         {
             if (component.Data.CustomId == "helpMenu")

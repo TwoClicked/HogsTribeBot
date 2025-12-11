@@ -21,13 +21,8 @@ namespace TribeBot.Bot.UI
             .Build();
 
         public static Embed Update() => new EmbedBuilder()
-            .WithTitle("✏️ Update Commands (After the command make sure to add the value)")
-            .AddField("!updateigname", "Update in-game name")
-            .AddField("!updateid", "Update in-game ID")
-            .AddField("!updatemight", "Update Might")
-            .AddField("!updatekills", "Update Kill Points")
-            .AddField("!updatecollector", "Update collector level")
-            .AddField("Officer Only", "`!updateReignPoints @user points`")
+            .WithTitle("✏️ Update Command")
+            .AddField("/updateprofile", "Update your profile")
             .WithColor(Color.Gold)
             .Build();
 
