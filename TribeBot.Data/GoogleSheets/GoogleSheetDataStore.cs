@@ -983,12 +983,15 @@ namespace TribeBot.Data.GoogleSheets
             foreach (var row in response.Values)
             {
                 if (row.Count < 2) continue;
-                if (row[0].ToString() == key)
-                    return row[1].ToString();
+
+                string rowKey = row[0]?.ToString()?.Trim() ?? "";
+                if (rowKey.Equals(key, StringComparison.OrdinalIgnoreCase))
+                    return row[1]?.ToString();
             }
 
             return null;
         }
+
 
         public async Task SetNextTitleRotationUtcAsync(string title, string utcTimestamp)
         {
@@ -1007,7 +1010,8 @@ namespace TribeBot.Data.GoogleSheets
 
             for (int i = 0; i < response.Values.Count; i++)
             {
-                if (response.Values[i][0].ToString() == key)
+                string rowKey = CleanKey(response.Values[i][0]?.ToString() ?? "");
+                if (rowKey.Equals(key, StringComparison.OrdinalIgnoreCase))
                 {
                     rowIndex = i + 2;
                     break;
@@ -1025,14 +1029,28 @@ namespace TribeBot.Data.GoogleSheets
         }
             };
 
-            var update = _sheetsService.Spreadsheets.Values.Update(body, _spreadsheetId, $"Settings!A{rowIndex}:B{rowIndex}");
+            var update = _sheetsService.Spreadsheets.Values.Update(
+                body,
+                _spreadsheetId,
+                $"Settings!A{rowIndex}:B{rowIndex}"
+            );
 
-            // REQUIRED
-            update.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+            update.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
 
             await update.ExecuteAsync();
         }
+        private string CleanKey(string raw)
+        {
+            if (raw == null) return "";
 
+            return raw
+                .Replace("\uFEFF", "")  // zero width no-break space
+                .Replace("\u200B", "")  // zero width space
+                .Replace("\u200F", "")  // RTL mark
+                .Replace("\u00A0", "")  // non-breaking space
+                .Trim();
+        }
 
         public async Task<string?> GetLastAwardedUserIdAsync(string title)
         {
@@ -1050,13 +1068,14 @@ namespace TribeBot.Data.GoogleSheets
             foreach (var row in response.Values)
             {
                 if (row.Count < 2) continue;
-                if (row[0].ToString() == key)
-                    return row[1].ToString();
+
+                string rowKey = row[0]?.ToString()?.Trim() ?? "";
+                if (rowKey.Equals(key, StringComparison.OrdinalIgnoreCase))
+                    return row[1]?.ToString();
             }
 
             return null;
         }
-
         public async Task SetLastAwardedUserIdAsync(string title, string discordUserId)
         {
             string key = title.Equals("tycoon", StringComparison.OrdinalIgnoreCase)
@@ -1074,7 +1093,8 @@ namespace TribeBot.Data.GoogleSheets
 
             for (int i = 0; i < response.Values.Count; i++)
             {
-                if (response.Values[i][0].ToString() == key)
+                string rowKey = response.Values[i][0]?.ToString()?.Trim() ?? "";
+                if (rowKey.Equals(key, StringComparison.OrdinalIgnoreCase))
                 {
                     rowIndex = i + 2;
                     break;
@@ -1092,13 +1112,18 @@ namespace TribeBot.Data.GoogleSheets
         }
             };
 
-            var update = _sheetsService.Spreadsheets.Values.Update(body, _spreadsheetId, $"Settings!A{rowIndex}:B{rowIndex}");
+            var update = _sheetsService.Spreadsheets.Values.Update(
+                body,
+                _spreadsheetId,
+                $"Settings!A{rowIndex}:B{rowIndex}"
+            );
 
-            // REQUIRED - you were missing this line
-            update.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+            update.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
 
             await update.ExecuteAsync();
         }
+
 
     }
 }

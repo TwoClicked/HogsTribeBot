@@ -24,13 +24,13 @@ namespace TribeBot.Bot.Handlers
             _client = client;
         }
 
-        // ============================================================================
-        // /titlegrant user:@User title:tycoon/priest
-        // ============================================================================
+        // ========================================================================
+        // /titlegrant
+        // ========================================================================
         [SlashCommand("titlegrant", "Confirm that a title was granted in-game and advance the rotation.")]
         public async Task GrantTitle(SocketUser user, string title)
         {
-            await DeferAsync(ephemeral: true); // PREVENTS TIMEOUT
+            await DeferAsync(ephemeral: true);
 
             title = title.Trim().ToLower();
 
@@ -40,101 +40,102 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            // Ensure the user issuing this command is a title giver
-            var guildUser = Context.Guild.GetUser(Context.User.Id);
-
-            if (!guildUser.Roles.Any(r => r.Id == TitleGiverRoleId))
+            // Ensure command issuer is a Title Giver
+            var giver = Context.Guild.GetUser(Context.User.Id);
+            if (!giver.Roles.Any(r => r.Id == TitleGiverRoleId))
             {
-                await FollowupAsync(
-                    "You do not have permission to grant titles. Only Title Givers may use this command.",
-                    ephemeral: true
-                );
+                await FollowupAsync("Only Title Givers may grant titles.", ephemeral: true);
                 return;
             }
 
             string grantedUserId = user.Id.ToString();
 
-            // Remove the granted user from queue
+            // Load queue BEFORE removal
+            var queueBefore = await _data.GetTitleQueueAsync(title);
+
+            // NEXT USER (safe logic)
+            string? nextUserId =
+                queueBefore.Count > 1 ? queueBefore[1].DiscordUserId : null;
+
+            // Always set the new deadline
+            DateTime nextDeadline = DateTime.UtcNow.AddDays(3);
+            await _data.SetNextTitleRotationUtcAsync(title, nextDeadline.ToString("o"));
+
+            // Remove granted user
             await _data.RemoveTitleApplicantAsync(grantedUserId);
 
             // Save cooldown
             await _data.SetLastAwardedUserIdAsync(title, grantedUserId);
 
-            // Load queue AFTER removal
-            var queue = await _data.GetTitleQueueAsync(title);
 
-            // Select next candidate
-            string? nextUserId = queue.FirstOrDefault()?.DiscordUserId;
+            // ========================================================================
+            // BUILD ANNOUNCEMENT FOR PUBLIC CHANNEL
+            // ========================================================================
+            var channel = _client.GetChannel(PurpleTitleChannelId) as IMessageChannel;
 
-            // Calculate timers
-            DateTime now = DateTime.UtcNow;
-            DateTime nextDeadline = now.AddDays(3);
-
-            // Save new timer only if queue not empty
-            if (nextUserId != null)
+            if (channel != null)
             {
-                await _data.SetNextTitleRotationUtcAsync(title, nextDeadline.ToString("o"));
-            }
-            else
-            {
-                // No next candidate → clear timer
-                await _data.SetNextTitleRotationUtcAsync(title, "");
-            }
-
-            // ============================================================================
-            // Build announcement embed for Purple Title Channel
-            // ============================================================================
-            var purpleChannel = _client.GetChannel(PurpleTitleChannelId) as IMessageChannel;
-
-            if (purpleChannel != null && nextUserId != null)
-            {
-                var nextUser = Context.Guild.GetUser(ulong.Parse(nextUserId));
-                string mentionNext = nextUser?.Mention ?? nextUserId;
-
-                List<string> queueList = new();
-                foreach (var (app, idx) in queue.Select((a, i) => (a, i + 1)))
+                if (nextUserId != null)
                 {
-                    if (idx == 1) continue;
+                    var nextUser = Context.Guild.GetUser(ulong.Parse(nextUserId));
+                    string nextMention = nextUser?.Mention ?? nextUserId;
 
-                    var u = Context.Guild.GetUser(ulong.Parse(app.DiscordUserId));
-                    string name = u?.Username ?? app.DiscordUserId;
-                    queueList.Add($"{idx}. {name}");
+                    // Remaining queue for display
+                    var queueText = queueBefore.Count <= 2
+                        ? "_No further applicants_"
+                        : string.Join("\n",
+                            queueBefore.Skip(2).Select((a, i) =>
+                            {
+                                var u = Context.Guild.GetUser(ulong.Parse(a.DiscordUserId));
+                                return $"{i + 3}. {(u?.Username ?? a.DiscordUserId)}";
+                            }));
+
+                    var embed = new EmbedBuilder()
+                        .WithTitle(title == "tycoon"
+                            ? "🎩 TYCOON Title Rotation"
+                            : "✝️ PRIEST Title Rotation")
+                        .WithColor(title == "tycoon" ? Color.Blue : Color.Green)
+                        .AddField("Granted By", giver.Mention, inline: true)
+                        .AddField("Current Title Holder", user.Mention, inline: true)
+                        .AddField("Next Up", nextMention)
+                        .AddField("Queue", queueText)
+                        .AddField("Next Rotation Deadline", $"{nextDeadline:yyyy-MM-dd HH:mm} UTC")
+                        .AddField("Pre-Announcement", "1 hour before deadline")
+                        .WithFooter("Rotation system updates automatically")
+                        .WithTimestamp(DateTimeOffset.UtcNow)
+                        .Build();
+
+                    await channel.SendMessageAsync($"<@&{TitleGiverRoleId}> {nextMention}", embed: embed);
                 }
+                else
+                {
+                    // Queue empty — only announce grant
+                    var embed = new EmbedBuilder()
+                        .WithTitle(title == "tycoon"
+                            ? "🎩 TYCOON Title Granted"
+                            : "✝️ PRIEST Title Granted")
+                        .WithColor(Color.DarkGrey)
+                        .AddField("Granted By", giver.Mention, inline: true)
+                        .AddField("New Title Holder", user.Mention, inline: true)
+                        .AddField("Queue", "_No further applicants_")
+                        .AddField("Next Rotation Deadline", $"{nextDeadline:yyyy-MM-dd HH:mm} UTC")
+                        .WithFooter("Timer still set — scheduler will notify if queue remains empty")
+                        .WithTimestamp(DateTimeOffset.UtcNow)
+                        .Build();
 
-                string queueText = queueList.Count == 0
-                    ? "_No further applicants_"
-                    : string.Join("\n", queueList);
-
-                var embed = new EmbedBuilder()
-                    .WithTitle(title == "tycoon" ? "🎩 TYCOON Title Rotation" : "✝️ PRIEST Title Rotation")
-                    .WithColor(title == "tycoon" ? Color.Blue : Color.Green)
-                    .AddField("Granted By", Context.User.Mention, inline: true)
-                    .AddField("Current Title Holder", user.Mention, inline: true)
-                    .AddField("Next Up", mentionNext)
-                    .AddField("Queue", queueText)
-                    .AddField("Next Rotation Deadline", $"{nextDeadline:yyyy-MM-dd HH:mm} UTC")
-                    .AddField("Pre-Announcement", "1 hour before deadline")
-                    .WithFooter("Rotation system updates automatically")
-                    .WithTimestamp(DateTimeOffset.UtcNow)
-                    .Build();
-
-                await purpleChannel.SendMessageAsync(
-                    $"<@&{TitleGiverRoleId}> {mentionNext}",
-                    embed: embed
-                );
+                    await channel.SendMessageAsync($"<@&{TitleGiverRoleId}>", embed: embed);
+                }
             }
 
-            // ============================================================================
-            // CONFIRMATION MESSAGE TO TITLE GIVER (NO PINGS)
-            // ============================================================================
-            string grantedName = user.Username;
 
-            string confirmation = nextUserId == null
-                ? $"Title **{title.ToUpper()}** was granted to **{grantedName}**.\nThere are no more applicants in the queue."
-                : $"Title **{title.ToUpper()}** was granted to **{grantedName}**.\n" +
-                  $"Rotation ends on **{nextDeadline:yyyy-MM-dd HH:mm} UTC**, then the next person will be picked.";
-
-            await FollowupAsync(confirmation, ephemeral: false);
+            // ========================================================================
+            // CONFIRMATION MESSAGE (PUBLIC)
+            // ========================================================================
+            await FollowupAsync(
+                $"Title **{title.ToUpper()}** was granted to **{user.Username}**.\n" +
+                $"Next rotation deadline: **{nextDeadline:yyyy-MM-dd HH:mm} UTC**.",
+                ephemeral: false
+            );
         }
     }
 }

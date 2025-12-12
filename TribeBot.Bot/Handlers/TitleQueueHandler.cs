@@ -30,7 +30,7 @@ namespace TribeBot.Bot.Handlers
         [SlashCommand("applytitle", "Apply for a tribe title: Tycoon or Priest.")]
         public async Task ApplyTitle(string title)
         {
-            await DeferAsync(ephemeral: true); // Prevents timeout!
+            await DeferAsync(ephemeral: true);
 
             title = title.Trim().ToLower();
 
@@ -46,11 +46,10 @@ namespace TribeBot.Bot.Handlers
             var tycoonQueue = await _data.GetTitleQueueAsync("tycoon");
             var priestQueue = await _data.GetTitleQueueAsync("priest");
 
-            // Load last awarded cooldowns
+            // Cooldown check — cannot reapply if last awarded
             var lastTycoon = await _data.GetLastAwardedUserIdAsync("tycoon");
             var lastPriest = await _data.GetLastAwardedUserIdAsync("priest");
 
-            // BLOCK if user holds ANY title last
             if (lastTycoon == discordId || lastPriest == discordId)
             {
                 await FollowupAsync(
@@ -61,40 +60,56 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            // BLOCK if user is already in ANY queue
-            if (tycoonQueue.Any(u => u.DiscordUserId == discordId) ||
-                priestQueue.Any(u => u.DiscordUserId == discordId))
+            // Already in queue check
+            if (tycoonQueue.Any(a => a.DiscordUserId == discordId) ||
+                priestQueue.Any(a => a.DiscordUserId == discordId))
             {
                 await FollowupAsync("You are already in a title queue.", ephemeral: true);
                 return;
             }
 
-            // Add to queue
+            // Add to queue 
             await _data.AddTitleApplicantAsync(title, discordId);
 
-            // Check for instant announcement (queue was empty & timer expired)
+            // Get queue position
             var queue = await _data.GetTitleQueueAsync(title);
-            bool firstPosition = queue.Count == 1;
 
-            var nextRotation = await _data.GetNextTitleRotationUtcAsync(title);
-            bool overdue = string.IsNullOrWhiteSpace(nextRotation) ||
-                DateTime.UtcNow >= DateTime.Parse(nextRotation);
-
-            if (firstPosition && overdue)
+            if (queue.Count() == 1)
             {
-                await AnnounceImmediateAsync(title, queue[0].DiscordUserId);
+                // have to make sure even if the list gets empty that the title giver gets told of the newest addition..
+                await NotifyFirstApplicantAsync(title, queue[0].DiscordUserId);
             }
 
-            // Position in queue
-            queue = await _data.GetTitleQueueAsync(title);
             int position = queue.FindIndex(a => a.DiscordUserId == discordId) + 1;
 
             await FollowupAsync(
-                $"You have been added to the **{title.ToUpper()}** queue!\nYour current position: **#{position}**",
+                $"You have been added to the **{title.ToUpper()}** queue!\n" +
+                $"Your current position: **#{position}**",
                 ephemeral: true
             );
         }
 
+        private async Task NotifyFirstApplicantAsync(string title, string userId)
+        {
+            var channel = _client.GetChannel(PurpleTitleChannelId) as IMessageChannel;
+            if (channel == null) return;
+
+            var guild = _client.Guilds.FirstOrDefault();
+            var user = guild?.GetUser(ulong.Parse(userId));
+            string mentionUser = user?.Mention ?? userId;
+
+            var embed = new EmbedBuilder()
+                        .WithTitle(title == "tycoon"
+                             ? "🎩 New TYCOON Applicant"
+                             : "✝️ New PRIEST Applicant")
+                        .WithColor(title == "tycoon" ? Color.Blue : Color.Green)
+                        .AddField("Applicant", mentionUser)
+                        .AddField("Status", "Queue was empty. A title giver may grant the title immediately using `/titlegrant`.")
+                        .WithTimestamp(DateTimeOffset.UtcNow)
+                        .Build();
+
+            await channel.SendMessageAsync($"<@&{TitleGiverRoleId}> {mentionUser}", embed: embed);
+        }
 
         // ============================================================================
         // /withdrawtitle

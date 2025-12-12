@@ -164,34 +164,53 @@ namespace TribeBot.Bot.Services
 
             var queue = await _dataStore.GetTitleQueueAsync(title);
             if (queue.Count == 0)
-                return;
+                return; // nothing to announce
 
             string nextUserId = queue[0].DiscordUserId;
-
             DateTime now = DateTime.UtcNow;
             DateTime preAnnounceTime = rotationTime.AddHours(-1);
 
-            // PRE-ANNOUNCEMENT LOGIC
+            // PRE-ANNOUNCEMENT
             if (now >= preAnnounceTime && now < rotationTime)
             {
                 if (!_preAnnounced[title])
                 {
-                    await SendTitleAnnouncementAsync(title, nextUserId, queue, color, isPreAnnouncement: true);
-                    _preAnnounced[title] = true;
+                    await SendTitleAlertAsync(title, nextUserId, color, "⏳ Pre-Announcement",
+                        "1 hour left before rotation. Please prepare to grant the title using /titlegrant.");
 
-                    await LogTitleActionAsync(title.ToUpper(), "Pre-announcement sent.");
+                    _preAnnounced[title] = true;
                 }
                 return;
             }
 
-            // OVERDUE ANNOUNCEMENT
+            // OVERDUE NOTICE (timer expired)
             if (now >= rotationTime)
             {
-                await SendTitleAnnouncementAsync(title, nextUserId, queue, color, isPreAnnouncement: false);
-
-                await LogTitleActionAsync(title.ToUpper(), "Overdue announcement sent.");
+                await SendTitleAlertAsync(title, nextUserId, color, "⚠️ Rotation Overdue",
+                    "The rotation timer has expired. A title giver must run /titlegrant to continue the rotation.");
             }
         }
+
+        private async Task SendTitleAlertAsync(string title, string nextUserId, Color color, string alertType, string message)
+        {
+            var channel = _client.GetChannel(PurpleTitleChannelId) as IMessageChannel;
+            if (channel == null) return;
+
+            var guild = _client.Guilds.FirstOrDefault();
+            var nextUser = guild?.GetUser(ulong.Parse(nextUserId));
+            string mentionNext = nextUser?.Mention ?? nextUserId;
+
+            var embed = new EmbedBuilder()
+                .WithTitle($"{alertType} — {(title == "tycoon" ? "🎩 TYCOON" : "✝️ PRIEST")}")
+                .WithColor(color)
+                .AddField("Next In Line", mentionNext)
+                .AddField("Reminder", message)
+                .WithTimestamp(DateTimeOffset.UtcNow)
+                .Build();
+
+            await channel.SendMessageAsync($"<@&{TitleGiverRoleId}>", embed: embed);
+        }
+
 
         private async Task SendTitleAnnouncementAsync(
             string title,
@@ -246,5 +265,6 @@ namespace TribeBot.Bot.Services
 
             await log.SendMessageAsync(embed: embed);
         }
+
     }
 }
