@@ -20,11 +20,13 @@ namespace TribeBot.Data.GoogleSheets
         private const string PollSheet = "Polls";
         private const string PollVotesSheet = "PollVotes";
         private const string ScheduledEventsSheet = "ScheduledEvents";
+        private const string TitleQueueSheet = "TitleQueue";
 
 
         //Multiple use Gid's 
         private const int PollsSheetId = 1167930524;
         private const int PollVotesSheetId = 994564864;
+        private const int TitleQueueSheetId = 1775322331;
 
         public GoogleSheetsDataStore(string credentialsPath, string spreadsheetId)
         {
@@ -631,9 +633,9 @@ namespace TribeBot.Data.GoogleSheets
                 rowIndex++;
             }
 
-            if(deleteRequests.Count == 0)
+            if (deleteRequests.Count == 0)
             {
-                return; 
+                return;
             }
 
             // reverse order > delete bottom up 
@@ -812,7 +814,7 @@ namespace TribeBot.Data.GoogleSheets
 
             if (rows == null) return list;
 
-            foreach ( var row in rows)
+            foreach (var row in rows)
             {
                 if (row.Count < 9) continue;
 
@@ -869,5 +871,234 @@ namespace TribeBot.Data.GoogleSheets
             update.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
             await update.ExecuteAsync();
         }
+
+        public async Task<List<TitleApplicant>> GetAllTitleApplicantsAsync()
+        {
+
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{TitleQueueSheet}!A2:C"
+            );
+
+            var response = await request.ExecuteAsync();
+            var rows = response.Values;
+
+            List<TitleApplicant> list = new();
+
+            if (rows == null) { return list; }
+
+            foreach (var row in rows)
+            {
+                if (row.Count() < 3) continue;
+
+                list.Add(new TitleApplicant
+                {
+                    Title = row[0].ToString(),
+                    DiscordUserId = row[1].ToString(),
+                    AppliedUtc = row[2].ToString()
+                });
+            }
+            return list;
+        }
+
+        public async Task<List<TitleApplicant>> GetTitleQueueAsync(string title)
+        {
+            var all = await GetAllTitleApplicantsAsync();
+
+            return all
+                .Where(a => a.Title.Equals(title, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(a => DateTime.Parse(a.AppliedUtc))
+                .ToList();
+        }
+
+        public async Task AddTitleApplicantAsync(string title, string discordUserId)
+        {
+            var values = new List<object>
+             {
+                 title,
+                 discordUserId,
+                 DateTime.UtcNow.ToString("o")
+             };
+
+            var append = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange
+                {
+                    Values = new List<IList<object>> { values }
+                },
+                _spreadsheetId,
+                $"{TitleQueueSheet}!A:C"
+            );
+
+            append.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+
+            await append.ExecuteAsync();
+        }
+        public async Task RemoveTitleApplicantAsync(string discordUserId)
+        {
+            var all = await GetAllTitleApplicantsAsync();
+
+            int index = all.FindIndex(a => a.DiscordUserId == discordUserId);
+            if (index == -1)
+                return;
+
+            // Sheets rows start at 2 (row 1 = header)
+            int row = index + 2;
+
+            var delete = new Google.Apis.Sheets.v4.Data.DeleteDimensionRequest
+            {
+                Range = new Google.Apis.Sheets.v4.Data.DimensionRange
+                {
+                    SheetId = TitleQueueSheetId,
+                    Dimension = "ROWS",
+                    StartIndex = row - 1,
+                    EndIndex = row
+                }
+            };
+
+            var batch = new Google.Apis.Sheets.v4.Data.BatchUpdateSpreadsheetRequest
+            {
+                Requests = new List<Google.Apis.Sheets.v4.Data.Request>
+                 {
+                     new Google.Apis.Sheets.v4.Data.Request { DeleteDimension = delete }
+                 }
+            };
+
+            await _sheetsService.Spreadsheets.BatchUpdate(batch, _spreadsheetId).ExecuteAsync();
+        }
+
+        public async Task<string?> GetNextTitleRotationUtcAsync(string title)
+        {
+            string key = title.Equals("tycoon", StringComparison.OrdinalIgnoreCase)
+                ? "NextTycoonRotationUtc"
+                : "NextPriestRotationUtc";
+
+            var response = await _sheetsService.Spreadsheets.Values
+                .Get(_spreadsheetId, "Settings!A2:B100")
+                .ExecuteAsync();
+
+            if (response.Values == null)
+                return null;
+
+            foreach (var row in response.Values)
+            {
+                if (row.Count < 2) continue;
+                if (row[0].ToString() == key)
+                    return row[1].ToString();
+            }
+
+            return null;
+        }
+
+        public async Task SetNextTitleRotationUtcAsync(string title, string utcTimestamp)
+        {
+            string key = title.Equals("tycoon", StringComparison.OrdinalIgnoreCase)
+                ? "NextTycoonRotationUtc"
+                : "NextPriestRotationUtc";
+
+            var response = await _sheetsService.Spreadsheets.Values
+                .Get(_spreadsheetId, "Settings!A2:B100")
+                .ExecuteAsync();
+
+            if (response.Values == null)
+                return;
+
+            int rowIndex = -1;
+
+            for (int i = 0; i < response.Values.Count; i++)
+            {
+                if (response.Values[i][0].ToString() == key)
+                {
+                    rowIndex = i + 2;
+                    break;
+                }
+            }
+
+            if (rowIndex == -1)
+                return;
+
+            var body = new ValueRange
+            {
+                Values = new List<IList<object>>
+        {
+            new List<object> { key, utcTimestamp }
+        }
+            };
+
+            var update = _sheetsService.Spreadsheets.Values.Update(body, _spreadsheetId, $"Settings!A{rowIndex}:B{rowIndex}");
+
+            // REQUIRED
+            update.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+
+            await update.ExecuteAsync();
+        }
+
+
+        public async Task<string?> GetLastAwardedUserIdAsync(string title)
+        {
+            string key = title.Equals("tycoon", StringComparison.OrdinalIgnoreCase)
+                ? "LastTycoonAwardedDiscordId"
+                : "LastPriestAwardedDiscordId";
+
+            var response = await _sheetsService.Spreadsheets.Values
+                .Get(_spreadsheetId, "Settings!A2:B100")
+                .ExecuteAsync();
+
+            if (response.Values == null)
+                return null;
+
+            foreach (var row in response.Values)
+            {
+                if (row.Count < 2) continue;
+                if (row[0].ToString() == key)
+                    return row[1].ToString();
+            }
+
+            return null;
+        }
+
+        public async Task SetLastAwardedUserIdAsync(string title, string discordUserId)
+        {
+            string key = title.Equals("tycoon", StringComparison.OrdinalIgnoreCase)
+                ? "LastTycoonAwardedDiscordId"
+                : "LastPriestAwardedDiscordId";
+
+            var response = await _sheetsService.Spreadsheets.Values
+                .Get(_spreadsheetId, "Settings!A2:B100")
+                .ExecuteAsync();
+
+            if (response.Values == null)
+                return;
+
+            int rowIndex = -1;
+
+            for (int i = 0; i < response.Values.Count; i++)
+            {
+                if (response.Values[i][0].ToString() == key)
+                {
+                    rowIndex = i + 2;
+                    break;
+                }
+            }
+
+            if (rowIndex == -1)
+                return;
+
+            var body = new ValueRange
+            {
+                Values = new List<IList<object>>
+        {
+            new List<object> { key, discordUserId }
+        }
+            };
+
+            var update = _sheetsService.Spreadsheets.Values.Update(body, _spreadsheetId, $"Settings!A{rowIndex}:B{rowIndex}");
+
+            // REQUIRED - you were missing this line
+            update.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+
+            await update.ExecuteAsync();
+        }
+
     }
 }

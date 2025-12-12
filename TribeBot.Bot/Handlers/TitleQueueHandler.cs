@@ -1,0 +1,187 @@
+﻿using Discord;
+using Discord.Interactions;
+using Discord.WebSocket;
+using System.Linq;
+using System.Threading.Tasks;
+using TribeBot.Data.Interfaces;
+using TribeBot.Core.Entities;
+using System.Collections.Generic;
+
+namespace TribeBot.Bot.Handlers
+{
+    public class TitleQueueHandler : InteractionModuleBase<SocketInteractionContext>
+    {
+        private readonly IGoogleSheetsDataStore _data;
+        private readonly DiscordSocketClient _client;
+
+        // IDs
+        private const ulong PurpleTitleChannelId = 1448989138610028554;
+        private const ulong TitleGiverRoleId = 1448989731051540582;
+
+        public TitleQueueHandler(IGoogleSheetsDataStore data, DiscordSocketClient client)
+        {
+            _data = data;
+            _client = client;
+        }
+
+        // ============================================================================
+        // /applytitle
+        // ============================================================================
+        [SlashCommand("applytitle", "Apply for a tribe title: Tycoon or Priest.")]
+        public async Task ApplyTitle(string title)
+        {
+            await DeferAsync(ephemeral: true); // Prevents timeout!
+
+            title = title.Trim().ToLower();
+
+            if (title != "tycoon" && title != "priest")
+            {
+                await FollowupAsync("Invalid title. Choose `tycoon` or `priest`.", ephemeral: true);
+                return;
+            }
+
+            string discordId = Context.User.Id.ToString();
+
+            // Load queues
+            var tycoonQueue = await _data.GetTitleQueueAsync("tycoon");
+            var priestQueue = await _data.GetTitleQueueAsync("priest");
+
+            // Load last awarded cooldowns
+            var lastTycoon = await _data.GetLastAwardedUserIdAsync("tycoon");
+            var lastPriest = await _data.GetLastAwardedUserIdAsync("priest");
+
+            // BLOCK if user holds ANY title last
+            if (lastTycoon == discordId || lastPriest == discordId)
+            {
+                await FollowupAsync(
+                    "You cannot apply for a title while you are the most recent title holder. " +
+                    "You must wait until the next rotation is granted.",
+                    ephemeral: true
+                );
+                return;
+            }
+
+            // BLOCK if user is already in ANY queue
+            if (tycoonQueue.Any(u => u.DiscordUserId == discordId) ||
+                priestQueue.Any(u => u.DiscordUserId == discordId))
+            {
+                await FollowupAsync("You are already in a title queue.", ephemeral: true);
+                return;
+            }
+
+            // Add to queue
+            await _data.AddTitleApplicantAsync(title, discordId);
+
+            // Check for instant announcement (queue was empty & timer expired)
+            var queue = await _data.GetTitleQueueAsync(title);
+            bool firstPosition = queue.Count == 1;
+
+            var nextRotation = await _data.GetNextTitleRotationUtcAsync(title);
+            bool overdue = string.IsNullOrWhiteSpace(nextRotation) ||
+                DateTime.UtcNow >= DateTime.Parse(nextRotation);
+
+            if (firstPosition && overdue)
+            {
+                await AnnounceImmediateAsync(title, queue[0].DiscordUserId);
+            }
+
+            // Position in queue
+            queue = await _data.GetTitleQueueAsync(title);
+            int position = queue.FindIndex(a => a.DiscordUserId == discordId) + 1;
+
+            await FollowupAsync(
+                $"You have been added to the **{title.ToUpper()}** queue!\nYour current position: **#{position}**",
+                ephemeral: true
+            );
+        }
+
+
+        // ============================================================================
+        // /withdrawtitle
+        // ============================================================================
+        [SlashCommand("withdrawtitle", "Withdraw yourself from any title queue.")]
+        public async Task Withdraw()
+        {
+            await DeferAsync(ephemeral: true); // PREVENT TIMEOUT
+
+            string discordId = Context.User.Id.ToString();
+
+            await _data.RemoveTitleApplicantAsync(discordId);
+
+            await FollowupAsync(
+                "You have been removed from the title queue (if you were in one).",
+                ephemeral: true
+            );
+        }
+
+
+        // ============================================================================
+        // /titlequeue
+        // ============================================================================
+        [SlashCommand("titlequeue", "View the current Tycoon and Priest queues.")]
+        public async Task QueueList()
+        {
+            await DeferAsync(ephemeral: true);
+
+            var tycoon = await _data.GetTitleQueueAsync("tycoon");
+            var priest = await _data.GetTitleQueueAsync("priest");
+
+            var embed = new EmbedBuilder()
+                .WithTitle("📜 Title Queues")
+                .WithColor(Color.Blue);
+
+            embed.AddField("TYCOON",
+                tycoon.Count == 0
+                    ? "_No applicants_"
+                    : string.Join("\n", ListQueueNames(tycoon)));
+
+            embed.AddField("PRIEST",
+                priest.Count == 0
+                    ? "_No applicants_"
+                    : string.Join("\n", ListQueueNames(priest)));
+
+            await FollowupAsync(embed: embed.Build(), ephemeral: true);
+        }
+
+
+        // ============================================================================
+        // Helper: Format queue list WITHOUT pinging
+        // ============================================================================
+        private List<string> ListQueueNames(List<TitleApplicant> list)
+        {
+            var result = new List<string>();
+
+            foreach (var (app, index) in list.Select((a, i) => (a, i + 1)))
+            {
+                var user = _client.GetUser(ulong.Parse(app.DiscordUserId));
+                string name = user?.Username ?? app.DiscordUserId;
+
+                result.Add($"{index}. {name}");
+            }
+
+            return result;
+        }
+
+        // ============================================================================
+        // Helper: Immediate Announcement when overdue
+        // ============================================================================
+        private async Task AnnounceImmediateAsync(string title, string userId)
+        {
+            var channel = _client.GetChannel(PurpleTitleChannelId) as IMessageChannel;
+            if (channel == null) return;
+
+            var guild = _client.Guilds.FirstOrDefault();
+            var user = guild?.GetUser(ulong.Parse(userId));
+            string mentionUser = user?.Mention ?? userId;
+
+            var embed = new EmbedBuilder()
+                .WithTitle(title == "tycoon" ? "🎩 TYCOON – Immediate Announcement" : "✝️ PRIEST – Immediate Announcement")
+                .WithColor(title == "tycoon" ? Color.Blue : Color.Green)
+                .AddField("Next Up", mentionUser)
+                .AddField("Queue Status", "Queue was empty and rotation overdue. User announced immediately.")
+                .Build();
+
+            await channel.SendMessageAsync($"<@&{TitleGiverRoleId}> {mentionUser}", embed: embed);
+        }
+    }
+}

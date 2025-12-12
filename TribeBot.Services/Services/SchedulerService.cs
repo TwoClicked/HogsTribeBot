@@ -2,7 +2,7 @@
 using Discord.WebSocket;
 using System;
 using System.Linq;
-using System.Threading;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using TribeBot.Core.Entities;
 using TribeBot.Data.Interfaces;
@@ -13,7 +13,17 @@ namespace TribeBot.Bot.Services
     {
         private readonly DiscordSocketClient _client;
         private readonly IGoogleSheetsDataStore _dataStore;
-        private readonly ulong OfficerLogChannelId = 1440211043820507217;
+
+        private const ulong OfficerLogChannelId = 1440211043820507217;
+        private const ulong PurpleTitleChannelId = 1448989138610028554;
+        private const ulong TitleGiverRoleId = 1448989731051540582;
+
+        // Tracks whether pre-announcement already fired for this rotation cycle
+        private readonly Dictionary<string, bool> _preAnnounced = new()
+        {
+            { "tycoon", false },
+            { "priest", false }
+        };
 
         public SchedulerService(DiscordSocketClient client, IGoogleSheetsDataStore dataStore)
         {
@@ -29,7 +39,8 @@ namespace TribeBot.Bot.Services
                 {
                     try
                     {
-                        await Tick();
+                        await Tick();                    // Existing event scheduler
+                        await CheckTitleRotationAsync(); // NEW title rotation scheduler
                     }
                     catch (Exception ex)
                     {
@@ -41,6 +52,9 @@ namespace TribeBot.Bot.Services
             });
         }
 
+        // ============================================================================
+        // EVENT REMINDER SYSTEM (UNCHANGED)
+        // ============================================================================
         private async Task Tick()
         {
             var events = await _dataStore.GetAllScheduledEventsAsync();
@@ -48,15 +62,12 @@ namespace TribeBot.Bot.Services
 
             foreach (var evt in events)
             {
-                if (evt.Completed)
-                    continue;
+                if (evt.Completed) continue;
 
                 DateTime reminderTime = evt.EventDateUtc.AddHours(-evt.ReminderOffsetHours);
 
                 if (!evt.ReminderSent && nowUtc >= reminderTime && nowUtc < evt.EventDateUtc)
-                {
                     await SendReminder(evt);
-                }
 
                 if (nowUtc >= evt.EventDateUtc.AddMinutes(5))
                 {
@@ -71,7 +82,7 @@ namespace TribeBot.Bot.Services
             var guild = _client.Guilds.FirstOrDefault();
             if (guild == null) return;
 
-            ulong targetRoleId = 1439972286877794314; // Dev test role or HogsEvents role depending on your testing (Hogs event id : 1448513656542199880 Dev test role id 1439972286877794314)
+            ulong targetRoleId = 1439972286877794314; // dev role or real event role
 
             var members = await guild.GetUsersAsync().FlattenAsync();
             var targets = members.Where(u => !u.IsBot && u.RoleIds.Contains(targetRoleId)).ToList();
@@ -86,7 +97,6 @@ namespace TribeBot.Bot.Services
                 {
                     var dm = await user.CreateDMChannelAsync();
                     await dm.SendMessageAsync(embed: embed);
-
                     sent++;
                     await Task.Delay(1100);
                 }
@@ -99,7 +109,6 @@ namespace TribeBot.Bot.Services
             evt.ReminderSent = true;
             await _dataStore.UpdateScheduledEventAsync(evt);
 
-            // Log to officer channel
             var log = _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
             if (log != null)
             {
@@ -118,9 +127,6 @@ namespace TribeBot.Bot.Services
             }
         }
 
-
-        //HELPERS
-
         private Embed BuildEventReminderEmbed(ScheduledEvent evt)
         {
             long unix = ((DateTimeOffset)evt.EventDateUtc).ToUnixTimeSeconds();
@@ -128,14 +134,117 @@ namespace TribeBot.Bot.Services
             return new EmbedBuilder()
                 .WithTitle("⏰ Event Reminder")
                 .WithColor(new Color(0x00A3E0))
-                .AddField("Event", $"**{evt.EventName}**", false)
-                .AddField("Starts At (UTC)", $"**{evt.EventDateUtc:yyyy-MM-dd HH:mm} UTC**", false)
-                .AddField("Starts In", $"<t:{unix}:R>", false)
-                .AddField("Message", evt.Message, false)
+                .AddField("Event", $"**{evt.EventName}**")
+                .AddField("Starts At (UTC)", $"**{evt.EventDateUtc:yyyy-MM-dd HH:mm} UTC**")
+                .AddField("Starts In", $"<t:{unix}:R>")
+                .AddField("Message", evt.Message)
                 .WithFooter($"Event ID: {evt.EventId}")
                 .WithTimestamp(DateTimeOffset.UtcNow)
                 .Build();
         }
 
+        // ============================================================================
+        // TITLE ROTATION SYSTEM — NEW
+        // ============================================================================
+
+        private async Task CheckTitleRotationAsync()
+        {
+            await CheckSingleTitleRotationAsync("tycoon", Color.Blue);
+            await CheckSingleTitleRotationAsync("priest", Color.Green);
+        }
+
+        private async Task CheckSingleTitleRotationAsync(string title, Color color)
+        {
+            string? nextRotationUtc = await _dataStore.GetNextTitleRotationUtcAsync(title);
+            if (string.IsNullOrWhiteSpace(nextRotationUtc))
+                return;
+
+            if (!DateTime.TryParse(nextRotationUtc, out DateTime rotationTime))
+                return;
+
+            var queue = await _dataStore.GetTitleQueueAsync(title);
+            if (queue.Count == 0)
+                return;
+
+            string nextUserId = queue[0].DiscordUserId;
+
+            DateTime now = DateTime.UtcNow;
+            DateTime preAnnounceTime = rotationTime.AddHours(-1);
+
+            // PRE-ANNOUNCEMENT LOGIC
+            if (now >= preAnnounceTime && now < rotationTime)
+            {
+                if (!_preAnnounced[title])
+                {
+                    await SendTitleAnnouncementAsync(title, nextUserId, queue, color, isPreAnnouncement: true);
+                    _preAnnounced[title] = true;
+
+                    await LogTitleActionAsync(title.ToUpper(), "Pre-announcement sent.");
+                }
+                return;
+            }
+
+            // OVERDUE ANNOUNCEMENT
+            if (now >= rotationTime)
+            {
+                await SendTitleAnnouncementAsync(title, nextUserId, queue, color, isPreAnnouncement: false);
+
+                await LogTitleActionAsync(title.ToUpper(), "Overdue announcement sent.");
+            }
+        }
+
+        private async Task SendTitleAnnouncementAsync(
+            string title,
+            string nextUserId,
+            List<TitleApplicant> queue,
+            Color color,
+            bool isPreAnnouncement)
+        {
+            var channel = _client.GetChannel(PurpleTitleChannelId) as IMessageChannel;
+            if (channel == null)
+                return;
+
+            var guild = _client.Guilds.FirstOrDefault();
+            var nextUser = guild?.GetUser(ulong.Parse(nextUserId));
+            string nextMention = nextUser?.Mention ?? nextUserId;
+
+            // Build queue list
+            List<string> list = new();
+            foreach (var (app, idx) in queue.Select((a, i) => (a, i + 1)))
+            {
+                if (idx == 1) continue;
+                var u = guild?.GetUser(ulong.Parse(app.DiscordUserId));
+                list.Add($"{idx}. {(u?.Username ?? app.DiscordUserId)}");
+            }
+
+            string queueText = list.Count == 0 ? "_No further applicants_" : string.Join("\n", list);
+
+            var embed = new EmbedBuilder()
+                .WithTitle(isPreAnnouncement
+                    ? (title == "tycoon" ? "🎩 TYCOON — Pre-Announcement" : "✝️ PRIEST — Pre-Announcement")
+                    : (title == "tycoon" ? "🎩 TYCOON — Overdue Announcement" : "✝️ PRIEST — Overdue Announcement"))
+                .WithColor(color)
+                .AddField("Next Up", nextMention)
+                .AddField("Queue", queueText)
+                .WithTimestamp(DateTimeOffset.UtcNow)
+                .Build();
+
+            await channel.SendMessageAsync($"<@&{TitleGiverRoleId}> {nextMention}", embed: embed);
+        }
+
+        private async Task LogTitleActionAsync(string title, string action)
+        {
+            var log = _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
+            if (log == null) return;
+
+            var embed = new EmbedBuilder()
+                .WithTitle($"📢 Title Rotation — {title}")
+                .WithDescription(action)
+                .WithColor(Color.Orange)
+                .WithTimestamp(DateTimeOffset.UtcNow)
+                .Build();
+
+            await log.SendMessageAsync(embed: embed);
+        }
     }
 }
