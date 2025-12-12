@@ -116,7 +116,7 @@ namespace TribeBot.Services.Services
                 {
                     // fully pay fine
                     fine.PaidAmount += owed;
-                    fine.IsPaid = true;
+                    //fine.IsPaid = true; We don't put this on true anymore we just add the payment to the sheet, the new verify command puts it true
                     remaining -= owed;
                 }
                 else

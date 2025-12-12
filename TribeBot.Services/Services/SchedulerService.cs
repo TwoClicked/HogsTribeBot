@@ -71,7 +71,7 @@ namespace TribeBot.Bot.Services
             var guild = _client.Guilds.FirstOrDefault();
             if (guild == null) return;
 
-            ulong targetRoleId = 1439972286877794314; // Dev test role or HogsEvents role depending on your testing
+            ulong targetRoleId = 1439972286877794314; // Dev test role or HogsEvents role depending on your testing (Hogs event id : 1448513656542199880 Dev test role id 1439972286877794314)
 
             var members = await guild.GetUsersAsync().FlattenAsync();
             var targets = members.Where(u => !u.IsBot && u.RoleIds.Contains(targetRoleId)).ToList();

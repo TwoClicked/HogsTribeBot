@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 public class EventNotifyRoleHandler : InteractionModuleBase<SocketInteractionContext>
 {
-    private const ulong HogsEventsRoleId = 1448513656542199880; //HogEvent role
+    private const ulong HogsEventsRoleId = 1448513656542199880; //HogEvent role Hogs event id : 1448513656542199880 Dev test role id 1439972286877794314
     private const ulong OfficerRoleId = 1222665812775534592;
 
     [SlashCommand("eventnotifications", "Post the opt-in button for DM event notifications.")]

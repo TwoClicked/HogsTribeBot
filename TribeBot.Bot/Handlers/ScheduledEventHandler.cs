@@ -18,7 +18,7 @@ namespace TribeBot.Bot.Handlers
         private const ulong OfficerRoleId = 1222665812775534592;
         private const ulong OfficerLogChannelId = 1440211043820507217;
 
-        // TESTING: Dev role ID (use real role ID in production)
+        // TESTING: Hogs event id : 1448513656542199880 Dev test role id 1439972286877794314
         private const ulong HogsEventsRoleId = 1439972286877794314;
 
         public ScheduledEventHandler(IGoogleSheetsDataStore dataStore, DiscordSocketClient client)
