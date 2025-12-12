@@ -108,10 +108,13 @@ namespace TribeBot.Bot.Handlers
                 var embed = new EmbedBuilder()
                     .WithTitle(title == "tycoon" ? "🎩 TYCOON Title Rotation" : "✝️ PRIEST Title Rotation")
                     .WithColor(title == "tycoon" ? Color.Blue : Color.Green)
+                    .AddField("Granted By", Context.User.Mention, inline: true)
+                    .AddField("Current Title Holder", user.Mention, inline: true)
                     .AddField("Next Up", mentionNext)
                     .AddField("Queue", queueText)
-                    .AddField("Next rotation deadline", nextDeadline.ToString("yyyy-MM-dd HH:mm") + " UTC")
-                    .AddField("Pre-announcement", "1 hour before")
+                    .AddField("Next Rotation Deadline", $"{nextDeadline:yyyy-MM-dd HH:mm} UTC")
+                    .AddField("Pre-Announcement", "1 hour before deadline")
+                    .WithFooter("Rotation system updates automatically")
                     .WithTimestamp(DateTimeOffset.UtcNow)
                     .Build();
 
@@ -131,7 +134,7 @@ namespace TribeBot.Bot.Handlers
                 : $"Title **{title.ToUpper()}** was granted to **{grantedName}**.\n" +
                   $"Rotation ends on **{nextDeadline:yyyy-MM-dd HH:mm} UTC**, then the next person will be picked.";
 
-            await FollowupAsync(confirmation, ephemeral: true);
+            await FollowupAsync(confirmation, ephemeral: false);
         }
     }
 }

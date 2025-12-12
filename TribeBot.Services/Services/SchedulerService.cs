@@ -81,8 +81,8 @@ namespace TribeBot.Bot.Services
         {
             var guild = _client.Guilds.FirstOrDefault();
             if (guild == null) return;
-
-            ulong targetRoleId = 1439972286877794314; // dev role or real event role
+             
+            ulong targetRoleId = 1448513656542199880; // current hogseventroleId
 
             var members = await guild.GetUsersAsync().FlattenAsync();
             var targets = members.Where(u => !u.IsBot && u.RoleIds.Contains(targetRoleId)).ToList();
