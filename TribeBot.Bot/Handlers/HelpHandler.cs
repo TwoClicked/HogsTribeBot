@@ -2,7 +2,7 @@
 using Discord.WebSocket;
 using System.Linq;
 using System.Threading.Tasks;
-using TribeBot.Bot.UI; // <-- IMPORTANT for EmbedHelper, HelpEmbeds, HelpComponents
+using TribeBot.Bot.UI;
 
 namespace TribeBot.Bot.Handlers
 {
@@ -10,8 +10,21 @@ namespace TribeBot.Bot.Handlers
     {
         private readonly DiscordSocketClient _client;
 
+        // UPDATED ORDER — now includes titles, sworn, events
         private readonly string[] Order =
-            { "general", "registration", "update", "reign", "bank", "fines", "polls", "creator" };
+        {
+            "general",
+            "registration",
+            "update",
+            "reign",
+            "bank",
+            "fines",
+            "polls",
+            "creator",
+            "titles",
+            "sworn",
+            "events"
+        };
 
         public HelpHandler(DiscordSocketClient client)
         {
@@ -20,7 +33,7 @@ namespace TribeBot.Bot.Handlers
         }
 
         // ============================================================
-        // MAIN COMMAND
+        // MAIN COMMAND — !help
         // ============================================================
         public async Task<bool> TryHandleAsync(SocketMessage message)
         {
@@ -29,11 +42,9 @@ namespace TribeBot.Bot.Handlers
 
             string content = message.Content.Trim().ToLower();
 
-            // If the message does NOT begin with !help → we skip
             if (!content.StartsWith("!help"))
                 return false;
 
-            // EXACT command: !help → show main help menu
             if (content == "!help")
             {
                 await message.Channel.SendMessageAsync(
@@ -43,7 +54,6 @@ namespace TribeBot.Bot.Handlers
                 return true;
             }
 
-            // Anything ELSE → invalid use of !help
             await message.Channel.SendMessageAsync(
                 embed: EmbedHelper.Error(
                     "Unknown help option.\nUse **`!help`** to open the help menu."
@@ -54,14 +64,14 @@ namespace TribeBot.Bot.Handlers
         }
 
         // ============================================================
-        // INTERACTIONS — buttons & menu navigation
+        // INTERACTION HANDLING — button & dropdown navigation
         // ============================================================
         private async Task HandleInteractionAsync(SocketInteraction interaction)
         {
             if (interaction is not SocketMessageComponent component)
                 return;
 
-            //Filter for other buttons
+            // Filter out unrelated components
             if (!IsHelpComponent(component.Data.CustomId))
                 return;
 
@@ -77,7 +87,7 @@ namespace TribeBot.Bot.Handlers
             if (id.EndsWith("_btn"))
                 selected = id.Replace("_btn", "");
 
-            // Build next help page
+            // Build selected page embed
             Embed embed = selected switch
             {
                 "general" => HelpEmbeds.General(),
@@ -88,6 +98,9 @@ namespace TribeBot.Bot.Handlers
                 "fines" => HelpEmbeds.Fines(),
                 "polls" => HelpEmbeds.Polls(),
                 "creator" => HelpEmbeds.Creator(),
+                "titles" => HelpEmbeds.Titles(),
+                "sworn" => HelpEmbeds.Sworn(),
+                "events" => HelpEmbeds.Events(),
                 _ => HelpEmbeds.General()
             };
 
@@ -105,7 +118,7 @@ namespace TribeBot.Bot.Handlers
                 || customId == "helpMenu";
         }
 
-        // Identify currently selected help category
+        // Identify current help category safely
         private string GetSelectedCategory(SocketMessageComponent component)
         {
             if (component.Data.CustomId == "helpMenu")
@@ -114,8 +127,11 @@ namespace TribeBot.Bot.Handlers
             if (component.Data.CustomId.EndsWith("_btn"))
                 return component.Data.CustomId.Replace("_btn", "");
 
+            // Match category by embed title text
+            string title = component.Message.Embeds.First().Title.ToLower();
+
             foreach (string cat in Order)
-                if (component.Message.Embeds.First().Title.ToLower().Contains(cat))
+                if (title.Contains(cat))
                     return cat;
 
             return "general";
