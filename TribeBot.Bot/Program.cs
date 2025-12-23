@@ -101,8 +101,14 @@ namespace TribeBot.Bot
             services.AddSingleton<IFineService, FineService>();
             services.AddSingleton<IReignService, ReignService>();
             services.AddSingleton<IVoteService, VoteService>();
+            services.AddSingleton<IFarmTribeService, FarmTribeService>();
+            services.AddSingleton<IFarmService, FarmService>();
+            services.AddSingleton<IFarmTribeAssignmentService, FarmTribeAssignmentService>();
 
-            services.AddSingleton<InteractionService>();
+
+            services.AddSingleton<InteractionService>(provider =>
+                new InteractionService(provider.GetRequiredService<DiscordSocketClient>()));
+
             services.AddSingleton<SchedulerService>();
 
             // ❌ DO NOT REGISTER INTERACTION MODULES HERE
@@ -166,6 +172,7 @@ namespace TribeBot.Bot
 
                 var ctx = new SocketInteractionContext(_client, interaction);
                 await _interactionService.ExecuteCommandAsync(ctx, _services);
+
             }
             catch (Exception ex)
             {

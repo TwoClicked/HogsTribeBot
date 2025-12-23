@@ -21,12 +21,23 @@ namespace TribeBot.Data.GoogleSheets
         private const string PollVotesSheet = "PollVotes";
         private const string ScheduledEventsSheet = "ScheduledEvents";
         private const string TitleQueueSheet = "TitleQueue";
+        private const string FarmTribesSheet = "FarmTribes";
+        private const string FarmsSheet = "Farms";
+        private const string FarmTribesAssignmentsSheet = "FarmTribeAssignments";
 
 
         //Multiple use Gid's 
         private const int PollsSheetId = 1167930524;
         private const int PollVotesSheetId = 994564864;
         private const int TitleQueueSheetId = 1775322331;
+        private const int FarmTribesSheetId = 1089417883;
+        private const int FarmsSheetId = 1580596082;
+        private const int FarmTribeAssignmentsSheetId = 1758889070;
+
+        private int GetFarmTribesSheetId() => FarmTribesSheetId;
+
+
+
 
         public GoogleSheetsDataStore(string credentialsPath, string spreadsheetId)
         {
@@ -227,10 +238,6 @@ namespace TribeBot.Data.GoogleSheets
 
             await request.ExecuteAsync();
         }
-
-
-
-
 
         // ------------------------------------------------------
         // DONATIONS
@@ -1124,6 +1131,413 @@ namespace TribeBot.Data.GoogleSheets
             await update.ExecuteAsync();
         }
 
+        // Register a farm tribe to the system 
+        public async Task AddFarmTribeAsync(FarmTribe tribe)
+        {
+            var values = new List<object>
+            {
+                tribe.FarmTribeId,
+                tribe.FarmTribeName,
+                tribe.TotalSlots,
+                tribe.UsedSlots,
+                tribe.CreatedUtc.ToString("o")
+            };
 
+            var append = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange
+                {
+                    Values = new List<IList<object>> { values }
+                },
+                _spreadsheetId,
+                $"{FarmTribesSheet}!A:E"
+            );
+
+            append.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+
+            await append.ExecuteAsync();
+        }
+
+        public async Task<List<FarmTribe>> GetAllFarmTribesAsync()
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{FarmTribesSheet}!A2:E"
+            );
+
+            var response = await request.ExecuteAsync();
+            var rows = response.Values;
+
+            var list = new List<FarmTribe>();
+            if (rows == null) return list;
+
+            foreach (var row in rows)
+            {
+                if (row.Count < 5) continue;
+
+                list.Add(new FarmTribe
+                {
+                    FarmTribeId = row[0].ToString(),
+                    FarmTribeName = row[1].ToString(),
+                    TotalSlots = int.TryParse(row[2].ToString(), out var ts) ? ts : 0,
+                    UsedSlots = int.TryParse(row[3].ToString(), out var us) ? us : 0,
+                    CreatedUtc = DateTime.TryParse(row[4].ToString(), out var dt)
+                        ? dt
+                        : DateTime.MinValue
+                });
+            }
+
+            return list;
+        }
+
+
+        public async Task UpdateFarmTribeAsync(FarmTribe tribe)
+        {
+            var all = await GetAllFarmTribesAsync();
+            int index = all.FindIndex(t => t.FarmTribeId == tribe.FarmTribeId);
+
+            if (index == -1)
+                return;
+
+            int row = index + 2; // header offset
+
+            var values = new List<object>
+    {
+        tribe.FarmTribeId,
+        tribe.FarmTribeName,
+        tribe.TotalSlots,
+        tribe.UsedSlots,
+        tribe.CreatedUtc.ToString("o")
+    };
+
+            var update = _sheetsService.Spreadsheets.Values.Update(
+                new ValueRange
+                {
+                    Values = new List<IList<object>> { values }
+                },
+                _spreadsheetId,
+                $"{FarmTribesSheet}!A{row}:E{row}"
+            );
+
+            update.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+
+            await update.ExecuteAsync();
+        }
+
+
+        public async Task<FarmTribe?> GetFarmTribeByIdAsync(string farmTribeId)
+        {
+            var all = await GetAllFarmTribesAsync();
+            return all.FirstOrDefault(t => t.FarmTribeId == farmTribeId);
+        }
+
+        public async Task DeleteFarmTribeAsync(string farmTribeId)
+        {
+            // Load all farm tribes (already parsed)
+            var all = await GetAllFarmTribesAsync();
+
+            int index = all.FindIndex(t => t.FarmTribeId == farmTribeId);
+            if (index == -1)
+                throw new InvalidOperationException("Farm tribe not found.");
+
+            // Sheet rows start at 2 (row 1 = header)
+            int row = index + 2;
+
+            var deleteRequest = new Google.Apis.Sheets.v4.Data.DeleteDimensionRequest
+            {
+                Range = new Google.Apis.Sheets.v4.Data.DimensionRange
+                {
+                    SheetId = GetFarmTribesSheetId(), 
+                    Dimension = "ROWS",
+                    StartIndex = row - 1, // inclusive
+                    EndIndex = row        // exclusive
+                }
+            };
+
+            var batch = new Google.Apis.Sheets.v4.Data.BatchUpdateSpreadsheetRequest
+            {
+                Requests = new List<Google.Apis.Sheets.v4.Data.Request>
+        {
+            new Google.Apis.Sheets.v4.Data.Request
+            {
+                DeleteDimension = deleteRequest
+            }
+        }
+            };
+
+            await _sheetsService
+                .Spreadsheets
+                .BatchUpdate(batch, _spreadsheetId)
+                .ExecuteAsync();
+        }
+
+
+        // Player adds farm to their profile(DiscordId)
+        public async Task AddFarmAsync(Farm farm)
+        {
+            var values = new List<object>
+    {
+        farm.FarmId,
+        farm.FarmName,
+        farm.OwnerDiscordId,
+        farm.OwnerIngameName,
+        farm.RegisteredUtc.ToString("o")
+    };
+
+            var append = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange { Values = new List<IList<object>> { values } },
+                _spreadsheetId,
+                $"{FarmsSheet}!A:E"
+            );
+
+            append.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+
+            await append.ExecuteAsync();
+        }
+
+        // Getting all the farms, more to fill lists, not making this a display command 
+        public async Task<List<Farm>> GetAllFarmsAsync()
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{FarmsSheet}!A2:E"
+            );
+
+            var response = await request.ExecuteAsync();
+            var rows = response.Values;
+
+            var list = new List<Farm>();
+            if (rows == null) return list;
+
+            foreach (var row in rows)
+            {
+                if (row.Count < 5) continue;
+
+                list.Add(new Farm
+                {
+                    FarmId = row[0].ToString(),
+                    FarmName = row[1].ToString(),
+                    OwnerDiscordId = row[2].ToString(),
+                    OwnerIngameName = row[3].ToString(),
+                    RegisteredUtc = DateTime.Parse(row[4].ToString())
+                });
+            }
+
+            return list;
+        }
+
+        // Single ID, Linked to a user or returning NULL if farm has no owner
+        public async Task<Farm?> GetFarmByIdAsync(string farmId)
+        {
+            var all = await GetAllFarmsAsync();
+            return all.FirstOrDefault(f => f.FarmId == farmId);
+        }
+
+        public async Task<List<Farm>> GetFarmsByOwnerAsync(string discordUserId)
+        {
+            var all = await GetAllFarmsAsync();
+            return all.Where(f => f.OwnerDiscordId == discordUserId).ToList();
+        }
+
+        // Remove a farm (Player method)
+        public async Task RemoveFarmAsync(string farmId)
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{FarmsSheet}!A2:E"
+            );
+
+            var response = await request.ExecuteAsync();
+            if (response.Values == null)
+                throw new InvalidOperationException("No farms found.");
+
+            int index = -1;
+
+            for (int i = 0; i < response.Values.Count; i++)
+            {
+                if (response.Values[i].Count > 0 &&
+                    response.Values[i][0].ToString() == farmId)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            if (index == -1)
+                throw new InvalidOperationException("Farm not found.");
+
+            int row = index + 2; // header offset
+
+            var deleteRequest = new DeleteDimensionRequest
+            {
+                Range = new DimensionRange
+                {
+                    SheetId = FarmsSheetId,
+                    Dimension = "ROWS",
+                    StartIndex = row - 1,
+                    EndIndex = row
+                }
+            };
+
+            var batch = new BatchUpdateSpreadsheetRequest
+            {
+                Requests = new List<Request>
+        {
+            new Request { DeleteDimension = deleteRequest }
+        }
+            };
+
+            await _sheetsService
+                .Spreadsheets
+                .BatchUpdate(batch, _spreadsheetId)
+                .ExecuteAsync();
+        }
+
+
+        //Get the asignment per player
+        public async Task<PlayerFarmTribeAssignment?> GetAssignmentForUserAsync(string discordUserId)
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{FarmTribesAssignmentsSheet}!A2:C");
+
+            var response = await request.ExecuteAsync();
+            if (response.Values == null)
+            {
+                return null;
+            }
+
+            foreach (var row in response.Values)
+            {
+                if (row.Count < 3)
+                    continue;
+
+                if (row[0].ToString() == discordUserId)
+                {
+                    return new PlayerFarmTribeAssignment
+                    {
+                        DiscordUserId = row[0].ToString(),
+                        FarmTribeId = row[1].ToString(),
+                        AssignedUtc = DateTime.TryParse(row[2].ToString(), out var dt)
+                            ? dt
+                            : DateTime.MinValue,
+                    };
+                }
+            }
+            return null;
+        }
+
+        // RETURN LIST OF MEMBERS ASSIGNED TO A TRIBE
+        public async Task<List<PlayerFarmTribeAssignment>> GetAssignmentsForTribeAsync(string farmTribeId)
+        {
+
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{FarmTribesAssignmentsSheet}!A2:C");
+
+            var response = await request.ExecuteAsync();
+            var list = new List<PlayerFarmTribeAssignment>();
+
+            if (response.Values == null)
+                return list;
+
+            foreach (var row in response.Values)
+            {
+                if (row.Count < 3)
+                    continue;
+
+                if (string.Equals(row[1]?.ToString(), farmTribeId, StringComparison.OrdinalIgnoreCase))
+                {
+                    list.Add(new PlayerFarmTribeAssignment
+                    {
+                        DiscordUserId = row[0].ToString(),
+                        FarmTribeId = row[1].ToString(),
+                        AssignedUtc = DateTime.TryParse(row[2].ToString(), out var dt)
+                            ? dt
+                            : DateTime.MinValue
+                    });
+                }
+            }
+            return list;
+        }
+
+        public async Task AddAssignmentAsync(PlayerFarmTribeAssignment assignment)
+        {
+            var values = new List<object>
+    {
+        assignment.DiscordUserId,
+        assignment.FarmTribeId,
+        assignment.AssignedUtc.ToString("o")
+    };
+
+            var append = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange
+                {
+                    Values = new List<IList<object>> { values }
+                },
+                _spreadsheetId,
+                $"{FarmTribesAssignmentsSheet}!A:C"
+            );
+
+            append.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+
+            await append.ExecuteAsync();
+        }
+
+
+        public async Task RemoveAssignmentAsync(string discordUserId)
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{FarmTribesAssignmentsSheet}!A2:C"
+            );
+
+            var response = await request.ExecuteAsync();
+            if (response.Values == null)
+                return;
+
+            int index = -1;
+
+            for (int i = 0; i < response.Values.Count; i++)
+            {
+                if (response.Values[i].Count > 0 &&
+                    response.Values[i][0].ToString() == discordUserId)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            if (index == -1)
+                return;
+
+            int row = index + 2; // header offset
+
+            var deleteRequest = new DeleteDimensionRequest
+            {
+                Range = new DimensionRange
+                {
+                    SheetId = FarmTribeAssignmentsSheetId,
+                    Dimension = "ROWS",
+                    StartIndex = row - 1,
+                    EndIndex = row
+                }
+            };
+
+            var batch = new BatchUpdateSpreadsheetRequest
+            {
+                Requests = new List<Request>
+        {
+            new Request { DeleteDimension = deleteRequest }
+        }
+            };
+
+            await _sheetsService
+                .Spreadsheets
+                .BatchUpdate(batch, _spreadsheetId)
+                .ExecuteAsync();
+        }
     }
 }

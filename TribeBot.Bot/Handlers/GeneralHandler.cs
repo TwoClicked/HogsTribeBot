@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using TribeBot.Core.Entities;
 using TribeBot.Core.Interfaces;
 using TribeBot.Data.Interfaces;
+using TribeBot.Services.Services;
 
 namespace TribeBot.Bot.Handlers
 {
@@ -16,6 +17,10 @@ namespace TribeBot.Bot.Handlers
         private readonly IDonationService _donationService;
         private readonly IFineService _fineService;
         private readonly IGoogleSheetsDataStore _dataStore;
+        private readonly IFarmService _farmService;
+        private readonly IFarmTribeService _farmTribeService;
+        private readonly IFarmTribeAssignmentService _assignmentService;
+
 
         private const ulong OfficerRoleId = 1222665812775534592;
 
@@ -24,13 +29,19 @@ namespace TribeBot.Bot.Handlers
             IMemberService memberService,
             IDonationService donationService,
             IFineService fineService,
-            IGoogleSheetsDataStore dataStore)
+            IGoogleSheetsDataStore dataStore,
+            IFarmService farmService,
+            IFarmTribeService farmTribeService,
+            IFarmTribeAssignmentService assignmentService)
         {
             _client = client;
             _memberService = memberService;
             _donationService = donationService;
             _fineService = fineService;
             _dataStore = dataStore;
+            _farmService = farmService;
+            _farmTribeService = farmTribeService;
+            _assignmentService = assignmentService;
         }
 
         // ======================================================================
@@ -317,23 +328,50 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
+            // Farm tribe info
+            string farmTribeDisplay = "Unassigned";
+
+            var assignment = await _assignmentService.GetAssignmentForUserAsync(id);
+            if (assignment != null)
+            {
+                var tribe = await _farmTribeService.GetFarmTribeByIdAsync(assignment.FarmTribeId);
+                if (tribe != null)
+                    farmTribeDisplay = tribe.FarmTribeName;
+            }
+
+            // Farm count
+            var farms = await _farmService.GetFarmsForUserAsync(id);
+            int farmCount = farms.Count;
+
             var donations = await _donationService.GetTotalForUserThisWeekAsync(id);
+            string donationStatus =
+                member.IsExempt ? "🟦 EXEMPT" :
+                donations > 0 ? "✅ PAID" :
+                "❌ UNPAID";
 
-            string donationStatus = member.IsExempt ? "🟦 EXEMPT" : donations > 0 ? "✅ PAID" : "❌ UNPAID";
+            var embed = new EmbedBuilder()
+                .WithTitle("📘 Your Profile")
+                .WithColor(Color.Blue)
+                .AddField("👤 Basic Info",
+                    $"**Name:** {member.IngameName}\n" +
+                    $"**ID:** {member.IngameId}\n" +
+                    $"**Farm Tribe:** {farmTribeDisplay}\n" +
+                    $"**Registered Farms:** {farmCount}",
+                    inline: false)
+                .AddField("⚔ Stats",
+                    $"**Might:** {member.Might:N0}\n" +
+                    $"**Kills:** {member.KillPoints:N0}\n" +
+                    $"**Collector Level:** {member.CollectorLevel}\n" +
+                    $"**Reign Points:** {member.ReignPoints}",
+                    inline: false)
+                .AddField("🏦 Donation Status", donationStatus, inline: true)
+                .AddField("🛡️ Exempt", member.IsExempt ? "Yes" : "No", inline: true)
+                .WithFooter($"Last Updated: {member.LastUpdatedUTC:yyyy-MM-dd HH:mm} UTC")
+                .Build();
 
-            string info =
-                $"**Name:** {member.IngameName}\n" +
-                $"**ID:** {member.IngameId}\n" +
-                $"**Might:** {member.Might:N0}\n" +
-                $"**Kills:** {member.KillPoints:N0}\n" +
-                $"**Collector Level:** {member.CollectorLevel}\n" +
-                $"**Reign Points:** {member.ReignPoints}\n" +
-                $"**Donation:** {donationStatus}\n" +
-                $"**Exempt:** {(member.IsExempt ? "Yes" : "No")}\n" +
-                $"**Updated:** {member.LastUpdatedUTC:yyyy-MM-dd HH:mm} UTC";
-
-            await SendInfo(message, "Your Profile", info);
+            await message.Channel.SendMessageAsync(embed: embed);
         }
+
 
         // ======================================================================
         // !listmembers
@@ -374,6 +412,22 @@ namespace TribeBot.Bot.Handlers
             string id = target.Id.ToString();
 
             var member = await _memberService.GetMemberByDiscordIdAsync(id);
+
+            // Farm tribe info
+            string farmTribeDisplay = "Unassigned";
+
+            var assignment = await _assignmentService.GetAssignmentForUserAsync(id);
+            if (assignment != null)
+            {
+                var tribe = await _farmTribeService.GetFarmTribeByIdAsync(assignment.FarmTribeId);
+                if (tribe != null)
+                    farmTribeDisplay = tribe.FarmTribeName;
+            }
+
+            // Farm count
+            var farms = await _farmService.GetFarmsForUserAsync(id);
+            int farmCount = farms.Count;
+
             if (member == null)
             {
                 await SendError(message, $"{target.Username} is not registered.");
@@ -407,7 +461,10 @@ namespace TribeBot.Bot.Handlers
                 .AddField("👤 Basic Info",
                     $"**Name:** {member.IngameName}\n" +
                     $"**ID:** {member.IngameId}\n" +
+                    $"**Farm Tribe:** {farmTribeDisplay}\n" +
+                    $"**Registered Farms:** {farmCount}\n" +
                     $"**Exempt:** {(member.IsExempt ? "Yes" : "No")}")
+                
                 .AddField("⚔ Stats",
                     $"**Might:** {member.Might:N0}\n" +
                     $"**Kills:** {member.KillPoints:N0}\n" +

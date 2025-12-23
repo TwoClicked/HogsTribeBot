@@ -3,10 +3,11 @@ using Discord.WebSocket;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
+using TribeBot.Bot.UI; // <-- IMPORTANT for EmbedHelper
 using TribeBot.Core.Entities;
 using TribeBot.Core.Interfaces;
-using TribeBot.Bot.UI; // <-- IMPORTANT for EmbedHelper
 
 namespace TribeBot.Bot.Handlers
 {
@@ -326,30 +327,59 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            // Officer results are usually VERY long → raw text is correct here
             var results = await _voteService.GetOfficerResultsAsync(pollId);
 
-            string msg =
-                $"📊 **Officer Results — {poll.Question}**\n" +
-                $"Ends: {poll.EndDateUtc:yyyy-MM-dd}\n\n";
+            const int MaxLen = 2000;
+            var sb = new StringBuilder();
+
+            // Header (always sent first)
+            sb.AppendLine($"📊 **Officer Results — {poll.Question}**");
+            sb.AppendLine($"Ends: {poll.EndDateUtc:yyyy-MM-dd}");
+            sb.AppendLine();
+
+            async Task FlushAsync()
+            {
+                if (sb.Length == 0) return;
+                await message.Channel.SendMessageAsync(sb.ToString());
+                sb.Clear();
+            }
 
             foreach (var opt in poll.Options)
             {
-                msg += $"**{opt}:**\n";
+                string optionHeader = $"**{opt}:**\n";
+
+                if (sb.Length + optionHeader.Length > MaxLen)
+                    await FlushAsync();
+
+                sb.Append(optionHeader);
 
                 if (!results.ContainsKey(opt) || results[opt].Count == 0)
                 {
-                    msg += "• No votes\n\n";
+                    if (sb.Length + "• No votes\n\n".Length > MaxLen)
+                        await FlushAsync();
+
+                    sb.AppendLine("• No votes");
+                    sb.AppendLine();
                     continue;
                 }
 
                 foreach (var voter in results[opt])
-                    msg += $"• {voter.IngameName} (<@{voter.DiscordUserId}>)\n";
+                {
+                    string line = $"• {voter.IngameName} (<@{voter.DiscordUserId}>)\n";
 
-                msg += "\n";
+                    if (sb.Length + line.Length > MaxLen)
+                        await FlushAsync();
+
+                    sb.Append(line);
+                }
+
+                if (sb.Length + 1 > MaxLen)
+                    await FlushAsync();
+
+                sb.AppendLine();
             }
 
-            await message.Channel.SendMessageAsync(msg);
+            await FlushAsync();
         }
 
         // ============================================================================

@@ -92,7 +92,7 @@ namespace TribeBot.Bot.UI
         // EVENTS
         public static Embed Events() => new EmbedBuilder()
             .WithTitle("📅 Event Scheduling Commands")
-            .AddField("/eventstart", "Schedule a tribe event (officers)")
+            .AddField("/hevent", "Schedule a tribe event (officers)")
             .AddField("/helist", "View scheduled events (officers)")
             .AddField("/heedit", "Edit a scheduled event (officers)")
             .AddField("/hedelete", "Delete a scheduled event (officers)")

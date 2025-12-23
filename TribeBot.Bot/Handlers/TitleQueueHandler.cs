@@ -1,11 +1,12 @@
 ﻿using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using TribeBot.Data.Interfaces;
+using TribeBot.Bot.UI;
 using TribeBot.Core.Entities;
-using System.Collections.Generic;
+using TribeBot.Data.Interfaces;
 
 namespace TribeBot.Bot.Handlers
 {
@@ -17,6 +18,8 @@ namespace TribeBot.Bot.Handlers
         // IDs
         private const ulong PurpleTitleChannelId = 1448989138610028554;
         private const ulong TitleGiverRoleId = 1448989731051540582;
+        private const ulong HogsRoleId = 1222668156271591485; 
+
 
         public TitleQueueHandler(IGoogleSheetsDataStore data, DiscordSocketClient client)
         {
@@ -30,6 +33,15 @@ namespace TribeBot.Bot.Handlers
         [SlashCommand("applytitle", "Apply for a tribe title: Tycoon or Priest.")]
         public async Task ApplyTitle(string title)
         {
+
+            var user = Context.Guild.GetUser(Context.User.Id);
+
+            if (!user.Roles.Any(r => r.Id == HogsRoleId))
+            {
+                await RespondAsync(embed: EmbedHelper.Error("You do not have permission."), ephemeral: true);
+                return;
+            }
+
             await DeferAsync(ephemeral: true);
 
             title = title.Trim().ToLower();
@@ -42,25 +54,21 @@ namespace TribeBot.Bot.Handlers
 
             string discordId = Context.User.Id.ToString();
 
-            // Load queues
             var tycoonQueue = await _data.GetTitleQueueAsync("tycoon");
             var priestQueue = await _data.GetTitleQueueAsync("priest");
 
-            // Cooldown check — cannot reapply if last awarded
             var lastTycoon = await _data.GetLastAwardedUserIdAsync("tycoon");
             var lastPriest = await _data.GetLastAwardedUserIdAsync("priest");
 
             if (lastTycoon == discordId || lastPriest == discordId)
             {
                 await FollowupAsync(
-                    "You cannot apply for a title while you are the most recent title holder. " +
-                    "You must wait until the next rotation is granted.",
+                    "You cannot apply for a title while you are the most recent title holder.",
                     ephemeral: true
                 );
                 return;
             }
 
-            // Already in queue check
             if (tycoonQueue.Any(a => a.DiscordUserId == discordId) ||
                 priestQueue.Any(a => a.DiscordUserId == discordId))
             {
@@ -68,26 +76,32 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            // Add to queue 
+            // Load BEFORE adding — this is the fix
+            var oldQueue = await _data.GetTitleQueueAsync(title);
+
+            // Add user
             await _data.AddTitleApplicantAsync(title, discordId);
 
-            // Get queue position
-            var queue = await _data.GetTitleQueueAsync(title);
+            // Load AFTER adding
+            var newQueue = await _data.GetTitleQueueAsync(title);
 
-            if (queue.Count() == 1)
+            bool queueWasEmpty = oldQueue.Count == 0;
+            bool queueNowHasOne = newQueue.Count == 1;
+
+            // Notify only when queue was empty and first applicant arrives
+            if (queueWasEmpty && queueNowHasOne)
             {
-                // have to make sure even if the list gets empty that the title giver gets told of the newest addition..
-                await NotifyFirstApplicantAsync(title, queue[0].DiscordUserId);
+                await NotifyFirstApplicantAsync(title, newQueue[0].DiscordUserId);
             }
 
-            int position = queue.FindIndex(a => a.DiscordUserId == discordId) + 1;
+            int position = newQueue.FindIndex(a => a.DiscordUserId == discordId) + 1;
 
             await FollowupAsync(
-                $"You have been added to the **{title.ToUpper()}** queue!\n" +
-                $"Your current position: **#{position}**",
+                $"You have been added to the **{title.ToUpper()}** queue!\nYour current position: **#{position}**",
                 ephemeral: true
             );
         }
+
 
         private async Task NotifyFirstApplicantAsync(string title, string userId)
         {

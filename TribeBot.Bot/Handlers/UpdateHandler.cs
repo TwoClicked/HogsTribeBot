@@ -3,7 +3,8 @@ using Discord.WebSocket;
 using Discord.Interactions;
 using System.Threading.Tasks;
 using TribeBot.Core.Interfaces;
-using TribeBot.Bot.UI; // EmbedHelper
+using TribeBot.Bot.UI;
+using TribeBot.Bot.Modals; // EmbedHelper
 
 namespace TribeBot.Bot.Handlers
 {
@@ -93,33 +94,5 @@ namespace TribeBot.Bot.Handlers
                 ephemeral: true
             );
         }
-    }
-
-    // ============================================================
-    //  Strongly-Typed Modal Class
-    // ============================================================
-    public class UpdateProfileModal : IModal
-    {
-        public string Title => "Update Your HOGS Profile";
-
-        [InputLabel("In-Game Name")]
-        [ModalTextInput("ign", placeholder: "Your character name")]
-        public string IngameName { get; set; }
-
-        [InputLabel("In-Game ID")]
-        [ModalTextInput("id", placeholder: "Numeric ID")]
-        public string IngameId { get; set; }
-
-        [InputLabel("Might")]
-        [ModalTextInput("might")]
-        public string Might { get; set; }
-
-        [InputLabel("Kill Points")]
-        [ModalTextInput("kills")]
-        public string Kills { get; set; }
-
-        [InputLabel("Collector Level")]
-        [ModalTextInput("collector")]
-        public string Collector { get; set; }
     }
 }

@@ -157,5 +157,48 @@ namespace TribeBot.Data.Interfaces
 
         // Store the last awarded user ID (cooldown enforcement)
         Task SetLastAwardedUserIdAsync(string title, string discordUserId);
+
+
+        // ==========================================================================
+        // FARM TRIBES
+        // ==========================================================================
+
+
+        // Add a new farm tribe 
+        Task AddFarmTribeAsync(FarmTribe tribe);
+        // Retrieve all the farm tribes
+        Task<List<FarmTribe>> GetAllFarmTribesAsync();
+        //Update an existing farm tribe (Usedslot changes)
+        Task UpdateFarmTribeAsync(FarmTribe tribe);
+        // Retrieve a farm tribe by ID
+        Task<FarmTribe?> GetFarmTribeByIdAsync(string farmTribeId);
+        //Delete a farm tribe 
+        Task DeleteFarmTribeAsync(string farmTribeId);
+
+        // ==========================================================================
+        // FARMS(PLAYERS)
+        // ==========================================================================
+
+        // Add farm 
+        Task AddFarmAsync(Farm farm);
+        //Get all farms
+        Task<List<Farm>> GetAllFarmsAsync();
+        // Get farm by Specific ID
+        Task<Farm?> GetFarmByIdAsync(string farmId);
+        // Get Farm by Owner
+        Task<List<Farm>> GetFarmsByOwnerAsync(string discordUserId);
+        // Remove farm by ID
+        Task RemoveFarmAsync(string farmId);
+
+        // ==========================================================================
+        // FARM TRIBE ASSIGNMENTS
+        // ==========================================================================
+        Task<PlayerFarmTribeAssignment?> GetAssignmentForUserAsync(string discordUserId);
+        Task<List<PlayerFarmTribeAssignment>> GetAssignmentsForTribeAsync(string farmTribeId);
+        Task AddAssignmentAsync(PlayerFarmTribeAssignment assignment);
+        Task RemoveAssignmentAsync(string discordUserId);
+
+
+
     }
 }

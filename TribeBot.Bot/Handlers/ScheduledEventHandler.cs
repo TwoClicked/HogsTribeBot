@@ -4,6 +4,7 @@ using Discord.WebSocket;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using TribeBot.Bot.Modals;
 using TribeBot.Bot.UI;
 using TribeBot.Core.Entities;
 using TribeBot.Data.Interfaces;
@@ -17,8 +18,7 @@ namespace TribeBot.Bot.Handlers
 
         private const ulong OfficerRoleId = 1222665812775534592;
         private const ulong OfficerLogChannelId = 1440211043820507217;
-
-        // TESTING: Hogs event id : 1448513656542199880 Dev test role id 1439972286877794314
+        private const ulong EventCoordinatorRoleId = 1284094048260587622;
         private const ulong HogsEventsRoleId = 1448513656542199880;
 
         public ScheduledEventHandler(IGoogleSheetsDataStore dataStore, DiscordSocketClient client)
@@ -31,7 +31,7 @@ namespace TribeBot.Bot.Handlers
             _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
 
         // =====================================================================
-        // SLASH COMMAND: /eventstart
+        // SLASH COMMAND: /hevent
         // =====================================================================
         [SlashCommand("hevent", "Schedule an event and set a reminder time.")]
         public async Task EventStart(
@@ -41,7 +41,7 @@ namespace TribeBot.Bot.Handlers
             [Choice("6 hours before", 6)]
             [Choice("12 hours before", 12)]
             [Choice("24 hours before", 24)]
-            int remindin)
+            int remindIn)
         {
             var user = Context.User as SocketGuildUser;
 
@@ -51,7 +51,7 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            if (!user.Roles.Any(r => r.Id == OfficerRoleId))
+            if (!user.Roles.Any(r => r.Id == OfficerRoleId || r.Id == EventCoordinatorRoleId))
             {
                 await RespondAsync(embed: EmbedHelper.Error("You do not have permission."), ephemeral: true);
                 return;
@@ -60,39 +60,32 @@ namespace TribeBot.Bot.Handlers
             string utcNow = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm");
             string localNow = $"{DateTime.Now:yyyy-MM-dd HH:mm} ({TimeZoneInfo.Local.StandardName})";
 
+            // FIX → Use colon in CustomId
             var modal = new ModalBuilder()
                 .WithTitle("Schedule Event")
-                .WithCustomId($"scheduleevt-{remindin}")
-                .AddTextInput("Event Name", "eventname", TextInputStyle.Short, required: true)
-                .AddTextInput("Event Date (YYYY-MM-DD)", "eventdate", TextInputStyle.Short, required: true)
-                .AddTextInput("Event Time (HH:MM 24h)", "eventtime", TextInputStyle.Short, required: true)
+                .WithCustomId($"scheduleevt:{remindIn}")
+                .AddTextInput("Event Name", "eventname", TextInputStyle.Short)
+                .AddTextInput("Event Date (YYYY-MM-DD)", "eventdate", TextInputStyle.Short)
+                .AddTextInput("Event Time (HH:MM 24h)", "eventtime", TextInputStyle.Short)
                 .AddTextInput("Current Time", "nowinfo", TextInputStyle.Short,
                     value: $"UTC: {utcNow} | Local: {localNow}", required: false)
-                .AddTextInput("Custom Message", "eventmessage", TextInputStyle.Paragraph, required: true);
+                .AddTextInput("Custom Message", "eventmessage", TextInputStyle.Paragraph);
 
             await RespondWithModalAsync(modal.Build());
         }
 
         // =====================================================================
-        // FIXED MODAL HANDLER: INSTANT REMINDER
+        // MODAL ROUTE: Handles ALL delay values
         // =====================================================================
-        [ModalInteraction("scheduleevt-0")]
-        public async Task HandleInstantSchedule(ScheduleEventModal modal)
-        {
-            await HandleEventSchedule(modal, 0);
-        }
-
-        // =====================================================================
-        // FIXED MODAL HANDLER: NUMBERED REMINDER
-        // =====================================================================
-        [ModalInteraction("scheduleevt-{hours:int}")]
-        public async Task HandleDelayedSchedule(ScheduleEventModal modal, int hours)
+        [ModalInteraction("scheduleevt:{hours:int}")]
+        public async Task HandleScheduleModal(ScheduleEventModal modal, int hours)
         {
             await HandleEventSchedule(modal, hours);
         }
 
+
         // =====================================================================
-        // SHARED EVENT SCHEDULING LOGIC
+        // SHARED LOGIC
         // =====================================================================
         private async Task HandleEventSchedule(ScheduleEventModal modal, int remindIn)
         {
@@ -124,89 +117,74 @@ namespace TribeBot.Bot.Handlers
 
             if (remindIn == 0)
             {
-                try
-                {
-                    await SendInstantReminder(evt);
-                    evt.ReminderSent = true;
-                    await _dataStore.UpdateScheduledEventAsync(evt);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[InstantReminderError] {ex}");
-                    await FollowupAsync(embed: EmbedHelper.Error("Event saved, but instant reminder failed."), ephemeral: true);
-                    return;
-                }
+                await SendInstantReminder(evt);
+                evt.ReminderSent = true;
+                await _dataStore.UpdateScheduledEventAsync(evt);
             }
 
             await FollowupAsync(embed:
                 EmbedHelper.Success(
                     $"Event **{evt.EventName}** scheduled!\n" +
                     $"🕒 **{evt.EventDateUtc:yyyy-MM-dd HH:mm UTC}**\n" +
-                    $"⏰ Reminder: **{(remindIn == 0 ? "Instant" : $"{remindIn} hours before")}**"
-                ), ephemeral: true);
+                    $"⏰ Reminder: **{(remindIn == 0 ? "Instant" : $"{remindIn} hours before")}**"),
+                ephemeral: true);
         }
 
-        // =====================================================================
-        // SAFE INSTANT REMINDER
-        // =====================================================================
+        [ModalInteraction("scheduleevt:1")]
+        public Task Schedule1(ScheduleEventModal modal) => HandleEventSchedule(modal, 1);
+
+        [ModalInteraction("scheduleevt:3")]
+        public Task Schedule3(ScheduleEventModal modal) => HandleEventSchedule(modal, 3);
+
+        [ModalInteraction("scheduleevt:6")]
+        public Task Schedule6(ScheduleEventModal modal) => HandleEventSchedule(modal, 6);
+
+        [ModalInteraction("scheduleevt:12")]
+        public Task Schedule12(ScheduleEventModal modal) => HandleEventSchedule(modal, 12);
+
+        [ModalInteraction("scheduleevt:24")]
+        public Task Schedule24(ScheduleEventModal modal) => HandleEventSchedule(modal, 24);
+
+        [ModalInteraction("scheduleevt:0")]
+        public Task ScheduleInstant(ScheduleEventModal modal) => HandleEventSchedule(modal, 0);
+
+
         private async Task SendInstantReminder(ScheduledEvent evt)
         {
             var guild = _client.Guilds.FirstOrDefault();
             if (guild == null) return;
 
             var users = await guild.GetUsersAsync().FlattenAsync();
-            var targets = users.Where(u => !u.IsBot && u.RoleIds.Contains(HogsEventsRoleId)).ToList();
+            var targets = users.Where(u => !u.IsBot && u.RoleIds.Contains(HogsEventsRoleId));
 
-            int sent = 0;
-            var failed = new System.Collections.Generic.List<string>();
+            var embed = BuildEventReminderEmbed(evt, true);
 
-            var embed = BuildEventReminderEmbed(evt, isInstant: true);
-
-            foreach (var user in targets)
+            foreach (var u in targets)
             {
                 try
                 {
-                    var dm = await user.CreateDMChannelAsync();
-                    await dm.SendMessageAsync(embed: embed);
-                    sent++;
+                    await (await u.CreateDMChannelAsync()).SendMessageAsync(embed: embed);
                     await Task.Delay(1100);
                 }
-                catch
-                {
-                    failed.Add(user.Username);
-                }
-            }
-
-            var log = OfficerLog;
-            if (log != null)
-            {
-                var l = new EmbedBuilder()
-                    .WithTitle("📢 Instant Reminder Sent")
-                    .WithColor(Color.Orange)
-                    .AddField("Event", evt.EventName)
-                    .AddField("Sent", sent, true)
-                    .AddField("Failed", failed.Count, true);
-
-                if (failed.Count > 0)
-                    l.AddField("Failed Users", string.Join("\n", failed));
-
-                await log.SendMessageAsync(embed: l.Build());
+                catch { }
             }
         }
 
-        private Embed BuildEventReminderEmbed(ScheduledEvent evt, bool isInstant)
+        private Embed BuildEventReminderEmbed(ScheduledEvent evt, bool instant)
         {
-            long unix = ((DateTimeOffset)evt.EventDateUtc).ToUnixTimeSeconds();
+            long unix = new DateTimeOffset(
+                DateTime.SpecifyKind(evt.EventDateUtc, DateTimeKind.Utc)
+            ).ToUnixTimeSeconds();
 
             return new EmbedBuilder()
-                .WithTitle(isInstant ? "📢 Instant Event Notification" : "⏰ Event Reminder")
-                .WithColor(new Color(0x00A3E0))
-                .AddField("Event", $"**{evt.EventName}**")
-                .AddField("Starts At", $"**{evt.EventDateUtc:yyyy-MM-dd HH:mm} UTC**")
-                .AddField("Starts In", $"<t:{unix}:R>")
+                .WithTitle(instant ? "📢 Instant Event Notification" : "⏰ Event Reminder")
+                .WithColor(Color.Blue)
+                .AddField("Event", evt.EventName)
+                .AddField("Starts At", $"{evt.EventDateUtc:yyyy-MM-dd HH:mm} UTC")
                 .AddField("Message", evt.Message)
                 .WithTimestamp(DateTimeOffset.UtcNow)
                 .Build();
         }
+
     }
 }

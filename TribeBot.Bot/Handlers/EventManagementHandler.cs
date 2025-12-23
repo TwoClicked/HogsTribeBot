@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using TribeBot.Bot.UI;
 using TribeBot.Data.Interfaces;
 using TribeBot.Core.Entities;
+using TribeBot.Bot.Modals;
 
 namespace TribeBot.Bot.Handlers
 {
@@ -17,6 +18,8 @@ namespace TribeBot.Bot.Handlers
 
         private const ulong OfficerRoleId = 1222665812775534592;
         private const ulong OfficerLogChannelId = 1440211043820507217;
+        private const ulong EventCoordinatorRoleId = 1284094048260587622;
+
 
         public EventsManagementHandler(IGoogleSheetsDataStore data, DiscordSocketClient client)
         {
@@ -24,8 +27,6 @@ namespace TribeBot.Bot.Handlers
             _client = client;
         }
 
-        private bool IsOfficer(SocketGuildUser user)
-            => user.Roles.Any(r => r.Id == OfficerRoleId);
 
         // =====================================================================
         // /helist
@@ -65,9 +66,9 @@ namespace TribeBot.Bot.Handlers
         public async Task DeleteEvent(string eventid)
         {
             var user = Context.Guild.GetUser(Context.User.Id);
-            if (!IsOfficer(user))
+            if (!user.Roles.Any(r => r.Id == OfficerRoleId || r.Id == EventCoordinatorRoleId))
             {
-                await RespondAsync(embed: EmbedHelper.Error("Only officers may delete events."), ephemeral: true);
+                await RespondAsync(embed: EmbedHelper.Error("You do not have permission."), ephemeral: true);
                 return;
             }
 
@@ -122,9 +123,9 @@ namespace TribeBot.Bot.Handlers
         public async Task EditEvent(string eventid)
         {
             var user = Context.Guild.GetUser(Context.User.Id);
-            if (!IsOfficer(user))
+            if (!user.Roles.Any(r => r.Id == OfficerRoleId || r.Id == EventCoordinatorRoleId))
             {
-                await RespondAsync(embed: EmbedHelper.Error("Only officers may edit events."), ephemeral: true);
+                await RespondAsync(embed: EmbedHelper.Error("You do not have permission."), ephemeral: true);
                 return;
             }
 
@@ -181,12 +182,14 @@ namespace TribeBot.Bot.Handlers
             evt.EventName = modal.EventName.Trim();
             evt.Message = modal.Message.Trim();
             evt.EventDateUtc = TimeZoneInfo.ConvertTimeToUtc(local);
-            evt.ReminderSent = false;
 
             await _data.UpdateScheduledEventAsync(evt);
 
             // ⭐ Send notification to all HogsEvent role members
-            await NotifyEventEditedAsync(evt);
+            if (evt.ReminderSent)
+            {
+                await NotifyEventEditedAsync(evt);
+            }
 
             await FollowupAsync(
                 embed: EmbedHelper.Success($"Event updated!\nNew Time: **{evt.EventDateUtc:yyyy-MM-dd HH:mm} UTC**"),
