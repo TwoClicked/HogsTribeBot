@@ -101,6 +101,9 @@ namespace TribeBot.Bot.Handlers
                 "titles" => HelpEmbeds.Titles(),
                 "sworn" => HelpEmbeds.Sworn(),
                 "events" => HelpEmbeds.Events(),
+                "farms" => HelpEmbeds.Farms(),
+                "farmtribes" => HelpEmbeds.FarmTribes(),
+
                 _ => HelpEmbeds.General()
             };
 

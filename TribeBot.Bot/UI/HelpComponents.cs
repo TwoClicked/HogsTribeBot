@@ -23,9 +23,12 @@ namespace TribeBot.Bot.UI
                 .AddOption("Fines", "fines", isDefault: selected == "fines")
                 .AddOption("Polls", "polls", isDefault: selected == "polls")
                 .AddOption("Content Creator", "creator", isDefault: selected == "creator")
-                .AddOption("Titles", "titles", isDefault: selected == "titles")          // NEW
-                .AddOption("Sworn Vengeance", "sworn", isDefault: selected == "sworn")  // NEW
-                .AddOption("Events", "events", isDefault: selected == "events");        // NEW
+                .AddOption("Titles", "titles", isDefault: selected == "titles")         
+                .AddOption("Sworn Vengeance", "sworn", isDefault: selected == "sworn") 
+                .AddOption("Events", "events", isDefault: selected == "events")
+                .AddOption("Farms", "farms", isDefault: selected == "farms")
+                .AddOption("Farm Tribes", "farmtribes", isDefault: selected == "farmtribes");
+
 
             builder.WithSelectMenu(menu);
             return builder;

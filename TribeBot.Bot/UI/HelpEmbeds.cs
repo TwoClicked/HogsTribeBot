@@ -98,5 +98,45 @@ namespace TribeBot.Bot.UI
             .AddField("/hedelete", "Delete a scheduled event (officers)")
             .WithColor(Color.Orange)
             .Build();
+
+        // FARMS
+
+        public static Embed Farms() => new EmbedBuilder()
+           .WithTitle("🌾 Farm Commands")
+           .AddField("/farm add", "Register a single farm using a form")
+           .AddField("/farm bulk", "Register multiple farms at once (bulk input)")
+           .AddField("/farm list", "Receive a DM listing your registered farms")
+           .AddField("/farm edit <farmId>", "Edit one of your registered farms")
+           .AddField("/farm remove <farmId>", "Remove a farm you own")
+           .AddField("Notes",
+               "• Farm IDs must be numeric\n" +
+               "• Duplicate IDs are blocked\n" +
+               "• You can only edit or remove farms you own")
+           .WithColor(Color.Green)
+           .Build();
+
+        //Farm tribes
+
+        public static Embed FarmTribes() => new EmbedBuilder()
+            .WithTitle("👥 Farm Tribe Commands")
+            .AddField("Players",
+                "`/farmtribe research` — Notify officers research is completed\n" +
+                "`/farmtribe goldmine` — Notify officers gold mine expired")
+            .AddField("Officers",
+                "`/farmtribe register` — Create a farm tribe\n" +
+                "`/farmtribe edit <tribeId>` — Edit tribe details\n" +
+                "`/farmtribe delete <tribeId>` — Delete a tribe\n" +
+                "`/farmtribe assign @user <tribeId>` — Assign player\n" +
+                "`/farmtribe unassign @user` — Remove player\n" +
+                "`/farmtribe list` — List all farm tribes\n" +
+                "`/farmtribe overview` — View all players & farm counts")
+            .AddField("Important",
+                "• Tribe capacity is enforced automatically\n" +
+                "• Players must be assigned to use tribe notifications\n" +
+                "• Unassigned players may still register farms")
+            .WithColor(Color.DarkGreen)
+            .Build();
+
+
     }
 }
