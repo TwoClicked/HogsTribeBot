@@ -1539,5 +1539,36 @@ namespace TribeBot.Data.GoogleSheets
                 .BatchUpdate(batch, _spreadsheetId)
                 .ExecuteAsync();
         }
+
+        public async Task<List<PlayerFarmTribeAssignment>> GetAllAssignmentsAsync()
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{FarmTribesAssignmentsSheet}!A2:C");
+
+            var response = await request.ExecuteAsync();
+            var list = new List<PlayerFarmTribeAssignment>();
+
+            if (response.Values == null)
+                return list;
+
+            foreach (var row in response.Values)
+            {
+                if (row.Count < 3)
+                    continue;
+
+                list.Add(new PlayerFarmTribeAssignment
+                {
+                    DiscordUserId = row[0].ToString(),
+                    FarmTribeId = row[1].ToString(),
+                    AssignedUtc = DateTime.TryParse(row[2].ToString(), out var dt)
+                        ? dt
+                        : DateTime.MinValue
+                });
+            }
+
+            return list;
+        }
+
     }
 }

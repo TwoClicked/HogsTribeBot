@@ -87,5 +87,6 @@ public class FarmService : IFarmService
         await _dataStore.UpdateFarmTribeAsync(tribe);
     }
 
-
+    public Task<List<Farm>> GetAllFarmsAsync()
+        => _dataStore.GetAllFarmsAsync();
 }

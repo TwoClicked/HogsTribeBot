@@ -384,9 +384,6 @@ namespace TribeBot.Bot.Handlers
             await RespondWithModalAsync(modal.Build());
         }
 
-        // ======================================================
-        // /farm overview
-        // ======================================================
         [SlashCommand("overview", "Show all players, their farm count, and farm tribe assignment")]
         public async Task FarmOverview()
         {
@@ -402,34 +399,56 @@ namespace TribeBot.Bot.Handlers
 
             await DeferAsync(ephemeral: true);
 
-            // Load all data
+            // ======================================================
+            // LOAD ALL DATA (ONE READ EACH)
+            // ======================================================
             var members = await _memberService.GetAllMembersAsync();
+            var farms = await _farmService.GetAllFarmsAsync();
+            var assignments = await _assignmentService.GetAllAssignmentsAsync();
             var tribes = await _farmTribeService.GetAllFarmTribesAsync();
 
-            var tribeById = tribes.ToDictionary(t => t.FarmTribeId, t => t.FarmTribeName);
+            // ======================================================
+            // BUILD LOOKUPS (IN-MEMORY)
+            // ======================================================
 
+            // DiscordUserId -> farm count
+            var farmCountByUser = farms
+                .GroupBy(f => f.OwnerDiscordId)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            // DiscordUserId -> FarmTribeId
+            var assignmentByUser = assignments
+                .ToDictionary(a => a.DiscordUserId, a => a.FarmTribeId);
+
+            // FarmTribeId -> FarmTribeName
+            var tribeNameById = tribes
+                .ToDictionary(t => t.FarmTribeId, t => t.FarmTribeName);
+
+            // ======================================================
+            // BUILD RESULT SET
+            // ======================================================
             var results = new List<(string Name, int FarmCount, string Tribe)>();
 
             foreach (var member in members)
             {
-                var farms = await _farmService.GetFarmsForUserAsync(member.DiscordUserId);
-                int farmCount = farms.Count;
-
-                var assignment = await _assignmentService
-                    .GetAssignmentForUserAsync(member.DiscordUserId);
+                int farmCount = farmCountByUser.TryGetValue(member.DiscordUserId, out var count)
+                    ? count
+                    : 0;
 
                 string tribeName = "Unassigned";
 
-                if (assignment != null &&
-                    tribeById.TryGetValue(assignment.FarmTribeId, out var name))
+                if (assignmentByUser.TryGetValue(member.DiscordUserId, out var tribeId) &&
+                    tribeNameById.TryGetValue(tribeId, out var resolvedName))
                 {
-                    tribeName = name;
+                    tribeName = resolvedName;
                 }
 
                 results.Add((member.IngameName, farmCount, tribeName));
             }
 
-            // Sort high → low
+            // ======================================================
+            // SORT (HIGH → LOW FARM COUNT)
+            // ======================================================
             var ordered = results
                 .OrderByDescending(r => r.FarmCount)
                 .ThenBy(r => r.Name)
@@ -443,11 +462,12 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            // Build output lines
-            var lines = ordered.Select((r, index) =>
-                $"{index + 1}. **{r.Name}** — `{r.FarmCount}` farms — {r.Tribe}");
+            // ======================================================
+            // OUTPUT (CHUNKED FOR DISCORD LIMITS)
+            // ======================================================
+            var lines = ordered.Select((r, i) =>
+                $"{i + 1}. **{r.Name}** — `{r.FarmCount}` farms — {r.Tribe}");
 
-            // Send in chunks to avoid Discord limits
             foreach (var chunk in ChunkLines(lines))
             {
                 await FollowupAsync(

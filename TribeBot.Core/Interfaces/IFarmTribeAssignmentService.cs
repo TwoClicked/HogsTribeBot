@@ -13,5 +13,6 @@ namespace TribeBot.Core.Interfaces
         Task RemovePlayerAsync(string discordUserId);
         Task<PlayerFarmTribeAssignment?> GetAssignmentForUserAsync(string discordUserId);
         Task<List<PlayerFarmTribeAssignment>> GetAssignmentsForTribeAsync(string farmTribeId);
+        Task<List<PlayerFarmTribeAssignment>> GetAllAssignmentsAsync();
     }
 }

@@ -80,6 +80,9 @@ namespace TribeBot.Services.Services
             return await _dataStore.GetAssignmentsForTribeAsync(farmTribeId);
         }
 
+        public Task<List<PlayerFarmTribeAssignment>> GetAllAssignmentsAsync()
+            => _dataStore.GetAllAssignmentsAsync();
+
     }
 
 }

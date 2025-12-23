@@ -197,6 +197,8 @@ namespace TribeBot.Data.Interfaces
         Task<List<PlayerFarmTribeAssignment>> GetAssignmentsForTribeAsync(string farmTribeId);
         Task AddAssignmentAsync(PlayerFarmTribeAssignment assignment);
         Task RemoveAssignmentAsync(string discordUserId);
+        Task<List<PlayerFarmTribeAssignment>> GetAllAssignmentsAsync();
+
 
 
 

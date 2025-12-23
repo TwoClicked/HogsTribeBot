@@ -18,6 +18,7 @@ namespace TribeBot.Core.Interfaces
         Task<Farm?> GetFarmByIdAsync(string farmId);
         // PLAYER REMOVES A FARM FROM PROFILE
         Task RemoveFarmAsync(string farmId, string discordUserId);
+        Task<List<Farm>> GetAllFarmsAsync();
 
     }
 }
