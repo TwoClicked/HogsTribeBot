@@ -15,6 +15,11 @@ namespace TribeBot.Bot.Handlers
         private readonly IFarmTribeService _farmTribeService;
         private readonly IFarmTribeAssignmentService _assignmentService;
 
+
+        //officer role id
+        private const ulong OfficerRoleId = 1222665812775534592;
+
+
         //Tracks the farm being edited by the user (In memory)
         private static readonly Dictionary<ulong, string> _pendingFarmEdits = new();
 
@@ -246,6 +251,123 @@ namespace TribeBot.Bot.Handlers
                 embed: EmbedHelper.Info("🌾 Farm Status", desc.ToString()),
                 ephemeral: true);
         }
+
+        // ======================================================
+        // /track, Method to track a farm via ID for officers
+        // ======================================================
+
+        [SlashCommand("track", "Track a farm by ID and see who owns it")]
+        public async Task TrackFarm(
+            [Summary("farmid", "Farm ingame ID")] string farmId)
+        {
+            // Officer only command Players do not need to track eachother
+
+            var user = Context.User as SocketGuildUser;
+
+            if (!user.Roles.Any(r => r.Id == OfficerRoleId))
+            {
+                await RespondAsync("You do not have permission to use this command.", ephemeral: true);
+                return;
+            }
+
+            await DeferAsync(ephemeral: true);
+
+            var farm = await _farmService.GetFarmByIdAsync(farmId);
+
+            if (farm == null)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Info(
+                        "Farm Tracking",
+                        $"No registered farm found with ID `{farmId}`."));
+                return;
+            }
+
+            var guildUser = Context.Guild.GetUser(ulong.Parse(farm.OwnerDiscordId));
+
+            string ownerDisplay = guildUser != null
+                ? $" `{guildUser.DisplayName}`"
+                : $" `{farm.OwnerIngameName}`";
+
+            await FollowupAsync(
+                embed: EmbedHelper.Info(
+                    "Farm Tracking Result", 
+                    $"**Farm ID:** `{farm.FarmId}`\n" +
+                    $"**Farm Name:** `{farm.FarmName}`\n" +
+                    $"**Owner:** {ownerDisplay}"),
+                    ephemeral: true);
+        }
+
+
+        // ======================================================
+        // Farm inactive, To help Officers and player inform about farms that have been off for a period of time, Bot will dm player upon the farm being signald as being offline.
+        // ======================================================
+
+        [SlashCommand("inactive", "Notify a player that a farm appears inactive")]
+        public async Task MarkFarmInactive(
+            [Summary("farmid", "Farm ingame ID")] string farmId)
+        {
+            // Officer-only
+            if (Context.User is not SocketGuildUser officer ||
+                !officer.Roles.Any(r => r.Id == OfficerRoleId))
+            {
+                await RespondAsync(
+                    embed: EmbedHelper.Error("You do not have permission to use this command."),
+                    ephemeral: true);
+                return;
+            }
+
+            await DeferAsync(ephemeral: true);
+
+            var farm = await _farmService.GetFarmByIdAsync(farmId);
+
+            if (farm == null)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error($"No registered farm found with ID `{farmId}`."),
+                    ephemeral: true);
+                return;
+            }
+
+            var owner = Context.Guild.GetUser(ulong.Parse(farm.OwnerDiscordId));
+
+            if (owner == null)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Warning(
+                        "Farm found, but the owner is no longer in the server."),
+                    ephemeral: true);
+                return;
+            }
+
+            // Fire-and-forget DM
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var dm = await owner.CreateDMChannelAsync();
+                    await dm.SendMessageAsync(
+                        embed: EmbedHelper.Info(
+                            "Inactive Farm Notice",
+                            $"One of your farms may be inactive and should be checked.\n\n" +
+                            $"**Farm Name:** {farm.FarmName}\n" +
+                            $"**Farm ID:** `{farm.FarmId}`)")
+                    );
+                }
+                catch
+                {
+                    await FollowupAsync(
+                        $"Failed to send Dm to **{farm.OwnerIngameName}** (Might be privacy settings, Or they blocked the bot, reach out to the person and find out to get this sorted.)");
+                }
+            });
+
+            await FollowupAsync(
+                embed: EmbedHelper.Success(
+                    $"The owner ({farm.OwnerIngameName}) of farm ID: `{farm.FarmId}` Name {farm.FarmName} has been notified."),
+                ephemeral: true);
+        }
+
+
 
         // ======================================================
         // MODAL HANDLER

@@ -435,6 +435,10 @@ namespace TribeBot.Bot.Handlers
                     ? count
                     : 0;
 
+                // Filter out those that have not registered any farms
+                if (farmCount == 0)
+                    continue;
+
                 string tribeName = "Unassigned";
 
                 if (assignmentByUser.TryGetValue(member.DiscordUserId, out var tribeId) &&
