@@ -1,10 +1,12 @@
 ﻿using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
+using Google.Apis.Drive.v3.Data;
 using System.Text;
 using TribeBot.Bot.Modals;
 using TribeBot.Bot.UI;
 using TribeBot.Core.Interfaces;
+using TribeBot.Services.Services;
 
 namespace TribeBot.Bot.Handlers
 {
@@ -14,10 +16,15 @@ namespace TribeBot.Bot.Handlers
         private readonly IFarmService _farmService;
         private readonly IFarmTribeService _farmTribeService;
         private readonly IFarmTribeAssignmentService _assignmentService;
+        private readonly IMemberService _memberService;
 
 
         //officer role id
         private const ulong OfficerRoleId = 1222665812775534592;
+
+        // Farm registration role
+        private const ulong HogsRole = 1222668156271591485;
+
 
 
         //Tracks the farm being edited by the user (In memory)
@@ -27,20 +34,24 @@ namespace TribeBot.Bot.Handlers
         public FarmHandler(
             IFarmService farmService,
             IFarmTribeService farmTribeService,
-            IFarmTribeAssignmentService assignmentService)
+            IFarmTribeAssignmentService assignmentService,
+            IMemberService memberService)
         {
             _farmService = farmService;
             _farmTribeService = farmTribeService;
             _assignmentService = assignmentService;
+            _memberService = memberService;
         }
 
 
         // ======================================================
         // /farm add
         // ======================================================
+        [RequireRole(HogsRole)]
         [SlashCommand("add", "Register a single farm")]
         public async Task AddFarm()
         {
+
             var modal = new ModalBuilder()
                 .WithTitle("Register Farm")
                 .WithCustomId("register")
@@ -61,10 +72,11 @@ namespace TribeBot.Bot.Handlers
         // ======================================================
         // /farm add(BULK ADD METHOD)
         // ======================================================
-
+        [RequireRole(HogsRole)]
         [SlashCommand("bulk", "Register multiple farms at once")]
         public async Task BulkAddFarms()
         {
+
             var modal = new ModalBuilder()
                 .WithTitle("Register farms (Bulk)")
                 .WithCustomId("register_farm_bulk")
@@ -291,7 +303,7 @@ namespace TribeBot.Bot.Handlers
 
             await FollowupAsync(
                 embed: EmbedHelper.Info(
-                    "Farm Tracking Result", 
+                    "Farm Tracking Result",
                     $"**Farm ID:** `{farm.FarmId}`\n" +
                     $"**Farm Name:** `{farm.FarmName}`\n" +
                     $"**Owner:** {ownerDisplay}"),
@@ -412,6 +424,8 @@ namespace TribeBot.Bot.Handlers
             await DeferAsync(ephemeral: true);
 
             var user = (SocketGuildUser)Context.User;
+
+
 
             var lines = modal.FarmList
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries)

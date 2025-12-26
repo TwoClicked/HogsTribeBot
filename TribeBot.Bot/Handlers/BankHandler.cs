@@ -226,7 +226,8 @@ namespace TribeBot.Bot.Handlers
 
                     await LogOfficer("Bank Reminder DM Failure", new()
                     {
-                        { "User", userId.ToString() }
+                        { "UserId", user.Id.ToString()},
+                        { "UserName", user.DisplayName }
                     });
                 }
             }

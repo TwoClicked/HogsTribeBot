@@ -192,13 +192,14 @@ namespace TribeBot.Bot.Handlers
                             embed: EmbedHelper.Info(
                                 "Farm Tribe Assignment",
                                 $"You have been **assigned** to the farm tribe **{tribeName}**.\n\n" +
-                                $"**You may start moving ALL your farms to your assigned farm tribe, They will only be allowed within this tribe**.\n\n" +
-                                $"If you have any questions, please contact an officer.")
+                                $"**If you are currently in a tribe that is different from {tribeName} then you will be removed 29/12/2025 from this tribe**.\n\n" +
+                                $"If you are already in this tribe, you do not have to do anything but make sure that ALL your registered farms are here! (**Moving begins on 29/12/2025**).")
                         );
                     }
                     catch
                     {
-                        // DM disabled or blocked — ignore silently
+                        await FollowupAsync(
+                            $"Failed to dm {player.DisplayName} ");
                     }
                 });
 
@@ -387,7 +388,6 @@ namespace TribeBot.Bot.Handlers
         [SlashCommand("overview", "Show all players, their farm count, and farm tribe assignment")]
         public async Task FarmOverview()
         {
-            // Officer-only
             if (Context.User is not SocketGuildUser officer ||
                 !officer.Roles.Any(r => r.Id == OfficerRoleId))
             {
@@ -399,66 +399,71 @@ namespace TribeBot.Bot.Handlers
 
             await DeferAsync(ephemeral: true);
 
-            // ======================================================
-            // LOAD ALL DATA (ONE READ EACH)
-            // ======================================================
             var members = await _memberService.GetAllMembersAsync();
             var farms = await _farmService.GetAllFarmsAsync();
             var assignments = await _assignmentService.GetAllAssignmentsAsync();
             var tribes = await _farmTribeService.GetAllFarmTribesAsync();
 
             // ======================================================
-            // BUILD LOOKUPS (IN-MEMORY)
+            // LOOKUPS
             // ======================================================
 
-            // DiscordUserId -> farm count
-            var farmCountByUser = farms
-                .GroupBy(f => f.OwnerDiscordId)
-                .ToDictionary(g => g.Key, g => g.Count());
+            // DiscordUserId (string) -> Member
+            var memberById = members.ToDictionary(m => m.DiscordUserId);
 
-            // DiscordUserId -> FarmTribeId
-            var assignmentByUser = assignments
-                .ToDictionary(a => a.DiscordUserId, a => a.FarmTribeId);
+            // DiscordUserId (string) -> farm count
+            var farmCountByUser = new Dictionary<string, int>();
+            foreach (var farm in farms)
+            {
+                if (!farmCountByUser.TryAdd(farm.OwnerDiscordId, 1))
+                    farmCountByUser[farm.OwnerDiscordId]++;
+            }
 
             // FarmTribeId -> FarmTribeName
-            var tribeNameById = tribes
-                .ToDictionary(t => t.FarmTribeId, t => t.FarmTribeName);
+            var tribeNameById = tribes.ToDictionary(
+                t => t.FarmTribeId,
+                t => t.FarmTribeName);
+
+            // DiscordUserId (string) -> FarmTribeName
+            var tribeNameByUser = new Dictionary<string, string>();
+            foreach (var assignment in assignments)
+            {
+                if (tribeNameById.TryGetValue(assignment.FarmTribeId, out var tribeName))
+                {
+                    tribeNameByUser[assignment.DiscordUserId] = tribeName;
+                }
+            }
+
+            // ======================================================
+            // DIAGNOSTIC: LOG MEMBERS WITH ZERO FARMS
+            // ======================================================
+            foreach (var member in members)
+            {
+                if (!farmCountByUser.ContainsKey(member.DiscordUserId))
+                {
+                    Console.WriteLine($"[FarmOverview] 0 farms: {member.IngameName}");
+                }
+            }
+
 
             // ======================================================
             // BUILD RESULT SET
             // ======================================================
-            var results = new List<(string Name, int FarmCount, string Tribe)>();
+            var results = new List<(string Name, int FarmCount, string Tribe)>(farmCountByUser.Count);
 
-            foreach (var member in members)
+            foreach (var (userId, farmCount) in farmCountByUser)
             {
-                int farmCount = farmCountByUser.TryGetValue(member.DiscordUserId, out var count)
-                    ? count
-                    : 0;
-
-                // Filter out those that have not registered any farms
-                if (farmCount == 0)
+                if (!memberById.TryGetValue(userId, out var member))
                     continue;
 
-                string tribeName = "Unassigned";
-
-                if (assignmentByUser.TryGetValue(member.DiscordUserId, out var tribeId) &&
-                    tribeNameById.TryGetValue(tribeId, out var resolvedName))
-                {
-                    tribeName = resolvedName;
-                }
+                var tribeName = tribeNameByUser.TryGetValue(userId, out var name)
+                    ? name
+                    : "Unassigned";
 
                 results.Add((member.IngameName, farmCount, tribeName));
             }
 
-            // ======================================================
-            // SORT (HIGH → LOW FARM COUNT)
-            // ======================================================
-            var ordered = results
-                .OrderByDescending(r => r.FarmCount)
-                .ThenBy(r => r.Name)
-                .ToList();
-
-            if (ordered.Count == 0)
+            if (results.Count == 0)
             {
                 await FollowupAsync(
                     embed: EmbedHelper.Info("Farm Overview", "No registered players found."),
@@ -466,22 +471,22 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            // ======================================================
-            // OUTPUT (CHUNKED FOR DISCORD LIMITS)
-            // ======================================================
-            var lines = ordered.Select((r, i) =>
+            results.Sort((a, b) =>
+            {
+                var cmp = b.FarmCount.CompareTo(a.FarmCount);
+                return cmp != 0 ? cmp : string.Compare(a.Name, b.Name, StringComparison.Ordinal);
+            });
+
+            var lines = results.Select((r, i) =>
                 $"{i + 1}. **{r.Name}** — `{r.FarmCount}` farms — {r.Tribe}");
 
             foreach (var chunk in ChunkLines(lines))
             {
                 await FollowupAsync(
-                    embed: EmbedHelper.Info(
-                        "📊 Farm Overview (High → Low)",
-                        chunk),
+                    embed: EmbedHelper.Info("📊 Farm Overview (High → Low)", chunk),
                     ephemeral: true);
             }
         }
-
 
 
         // MODALS
