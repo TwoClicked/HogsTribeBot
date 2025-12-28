@@ -262,7 +262,8 @@ namespace TribeBot.Bot.Handlers
             else
             {
                 var all = await _memberService.GetAllMembersAsync();
-                memberToRemove = all.FirstOrDefault(m => m.IngameName.Equals(args, StringComparison.OrdinalIgnoreCase));
+                memberToRemove = all.FirstOrDefault(m =>
+                    m.IngameName.Equals(args, StringComparison.OrdinalIgnoreCase));
             }
 
             if (memberToRemove == null)
@@ -271,13 +272,40 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            bool success = await _dataStore.RemoveMemberByDiscordIdAsync(memberToRemove.DiscordUserId);
+            string discordId = memberToRemove.DiscordUserId;
+
+            // ======================================================
+            // CLEANUP SEQUENCE (ORDER MATTERS)
+            // ======================================================
+
+            // 1️⃣ Unassign from farm tribe (auto-adjusts slots)
+            await _assignmentService.RemovePlayerAsync(discordId);
+
+            // 2️⃣ Remove all farms owned by the member
+            var farms = await _farmService.GetFarmsForUserAsync(discordId);
+            foreach (var farm in farms)
+            {
+                await _farmService.RemoveFarmAsync(farm.FarmId, discordId);
+            }
+
+            // 3️⃣ Remove the member record
+            bool success = await _dataStore.RemoveMemberByDiscordIdAsync(discordId);
 
             if (success)
-                await SendSuccess(message, $"Removed **{memberToRemove.IngameName}** from the member list.");
+            {
+                await SendSuccess(
+                    message,
+                    $"Removed **{memberToRemove.IngameName}** from the member list.\n" +
+                    $"• Farms removed: **{farms.Count}**\n" +
+                    $"• Farm tribe assignment cleared."
+                );
+            }
             else
-                await SendError(message, $"Removal failed — member not found in the sheets.");
+            {
+                await SendError(message, "Removal failed — member not found in the sheets.");
+            }
         }
+
 
         // ======================================================================
         // !listnonregistered

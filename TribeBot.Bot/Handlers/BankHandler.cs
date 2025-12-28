@@ -314,6 +314,51 @@ namespace TribeBot.Bot.Handlers
                 EmbedHelper.Success($"Your next upload will count for **{args}**."));
         }
 
+
+        // ===================================================================
+        // Logging for unpaid bank members
+        // ===================================================================
+
+        public async Task LogUnpaidBeforeResetAsync()
+        {
+            var members = await _memberService.GetAllMembersAsync();
+            var totals = await _donationService.GetTotalsForAllUsersThisWeekAsync();
+
+            var unpaid = members
+                .Where(m => !m.IsExempt &&
+                            (!totals.ContainsKey(m.DiscordUserId) ||
+                             totals[m.DiscordUserId] <= 0))
+                .ToList();
+
+            string message;
+
+            if (!unpaid.Any())
+            {
+                message = "🎉 **Weekly Bank Audit (Pre-Reset)**\n\nAll members have paid or are exempt.";
+            }
+            else
+            {
+                string list = string.Join("\n", unpaid.Select(m =>
+                    $"• **{m.IngameName}** ({m.IngameId}, {m.DiscordUserId})"));
+
+                message =
+                    "📋 **Weekly Bank Audit (Pre-Reset)**\n\n" +
+                    "**Unpaid Members:**\n" +
+                    list;
+            }
+
+            var channel = _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
+
+            if (channel != null)
+            {
+                await channel.SendMessageAsync(embed: EmbedHelper.Warning(message));
+            }
+        }
+
+
+
+
+
         // ===================================================================
         // OCR DONATION HANDLING
         // ===================================================================

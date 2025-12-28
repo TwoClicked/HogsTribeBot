@@ -32,6 +32,8 @@ namespace TribeBot.Bot
         private HelpHandler _help_handler;
         private GeneralHandler _general_handler;
         private FallbackHandler _fallback_handler;
+        private bool _bankAuditStarted;
+
 
         public static void Main(string[] args)
             => new Program().MainAsync().GetAwaiter().GetResult();
@@ -131,6 +133,8 @@ namespace TribeBot.Bot
         {
             try
             {
+
+
                 _interactionService = _services.GetRequiredService<InteractionService>();
 
                 Console.WriteLine("[Init] Loading interaction modules...");
@@ -145,6 +149,36 @@ namespace TribeBot.Bot
                 Console.WriteLine("[Init] Slash commands synced.");
 
                 _client.InteractionCreated += HandleInteractionAsync;
+
+
+                // =====================================================
+                // WEEKLY BANK PRE-RESET AUDIT
+                // =====================================================
+                if (!_bankAuditStarted)
+                {
+                    _bankAuditStarted = true;
+
+                    _ = Task.Run(async () =>
+                    {
+                        while (true)
+                        {
+                            var delay = GetDelayUntilPreReset();
+                            await Task.Delay(delay);
+
+                            try
+                            {
+                                await _bankHandler.LogUnpaidBeforeResetAsync();
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[Bank Audit Error] {ex}");
+                            }
+
+                            // Sleep past reset so it never fires twice
+                            await Task.Delay(TimeSpan.FromHours(2));
+                        }
+                    });
+                }
 
                 _services.GetRequiredService<SchedulerService>().Start();
 
@@ -200,6 +234,24 @@ namespace TribeBot.Bot
 
             await _fallback_handler.HandleAsync(message);
         }
+
+        // =====================================================================
+        // unpaid BANK helper
+        // =====================================================================
+        private static TimeSpan GetDelayUntilPreReset()
+        {
+            var now = DateTime.UtcNow;
+
+            // Example: Sunday 1 hour before weekly reset at 00:00 UTC
+            var nextReset = now.Date.AddDays((7 - (int)now.DayOfWeek) % 7);
+            var auditTime = nextReset.AddHours(-1);
+
+            if (auditTime <= now)
+                auditTime = auditTime.AddDays(7);
+
+            return auditTime - now;
+        }
+
 
         // =====================================================================
         // LOGGING
