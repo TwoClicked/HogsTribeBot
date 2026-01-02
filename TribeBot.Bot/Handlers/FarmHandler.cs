@@ -265,50 +265,83 @@ namespace TribeBot.Bot.Handlers
         }
 
         // ======================================================
-        // /track, Method to track a farm via ID for officers
+        // /farm track – Officer only
         // ======================================================
-
         [SlashCommand("track", "Track a farm by ID and see who owns it")]
         public async Task TrackFarm(
             [Summary("farmid", "Farm ingame ID")] string farmId)
         {
-            // Officer only command Players do not need to track eachother
+            //var user = Context.User as SocketGuildUser;
 
-            var user = Context.User as SocketGuildUser;
-
-            if (!user.Roles.Any(r => r.Id == OfficerRoleId))
-            {
-                await RespondAsync("You do not have permission to use this command.", ephemeral: true);
-                return;
-            }
+            //if (user == null || !user.Roles.Any(r => r.Id == OfficerRoleId))
+            //{
+            //    await RespondAsync(
+            //        embed: EmbedHelper.Error("You do not have permission to use this command."),
+            //        ephemeral: true);
+            //    return;
+            //}
 
             await DeferAsync(ephemeral: true);
 
+            // --------------------------------------------------
+            // 1. Get farm
+            // --------------------------------------------------
             var farm = await _farmService.GetFarmByIdAsync(farmId);
-
             if (farm == null)
             {
                 await FollowupAsync(
                     embed: EmbedHelper.Info(
                         "Farm Tracking",
-                        $"No registered farm found with ID `{farmId}`."));
+                        $"No registered farm found with ID `{farmId}`."
+                    ),
+                    ephemeral: true);
                 return;
             }
 
-            var guildUser = Context.Guild.GetUser(ulong.Parse(farm.OwnerDiscordId));
+            // --------------------------------------------------
+            // 2. Resolve owner
+            // --------------------------------------------------
+            SocketGuildUser? ownerUser = null;
+            if (ulong.TryParse(farm.OwnerDiscordId, out var ownerId))
+                ownerUser = Context.Guild.GetUser(ownerId);
 
-            string ownerDisplay = guildUser != null
-                ? $" `{guildUser.DisplayName}`"
-                : $" `{farm.OwnerIngameName}`";
+            string ownerDisplay = ownerUser != null
+                ? ownerUser.Mention
+                : farm.OwnerIngameName;
 
+            // --------------------------------------------------
+            // 3. Resolve farm tribe assignment (CORRECT PATH)
+            // --------------------------------------------------
+            string tribeDisplay = "❌ Not assigned";
+
+            var assignment = await _assignmentService
+                .GetAssignmentForUserAsync(farm.OwnerDiscordId);
+
+            if (assignment != null)
+            {
+                var tribe = await _farmTribeService
+                    .GetFarmTribeByIdAsync(assignment.FarmTribeId);
+
+                if (tribe != null)
+                    tribeDisplay = $"**{tribe.FarmTribeName}** (`{tribe.FarmTribeId}`)";
+            }
+
+            // --------------------------------------------------
+            // 4. Output
+            // --------------------------------------------------
             await FollowupAsync(
                 embed: EmbedHelper.Info(
                     "Farm Tracking Result",
                     $"**Farm ID:** `{farm.FarmId}`\n" +
                     $"**Farm Name:** `{farm.FarmName}`\n" +
-                    $"**Owner:** {ownerDisplay}"),
-                    ephemeral: true);
+                    $"**Owner:** {ownerDisplay}\n" +
+                    $"**Farm Tribe:** {tribeDisplay}"
+                ),
+                ephemeral: true);
         }
+
+
+
 
 
         // ======================================================

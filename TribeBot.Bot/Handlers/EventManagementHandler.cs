@@ -217,7 +217,6 @@ namespace TribeBot.Bot.Handlers
                 .WithColor(Color.Orange)
                 .AddField("Event", evt.EventName)
                 .AddField("New Time (UTC)", evt.EventDateUtc.ToString("yyyy-MM-dd HH:mm"))
-                .AddField("Starts In", $"<t:{unixTime}:R>")
                 .AddField("Message", evt.Message)
                 .WithTimestamp(DateTimeOffset.UtcNow)
                 .Build();
