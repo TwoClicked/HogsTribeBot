@@ -242,15 +242,20 @@ namespace TribeBot.Bot
         {
             var now = DateTime.UtcNow;
 
-            // Example: Sunday 1 hour before weekly reset at 00:00 UTC
-            var nextReset = now.Date.AddDays((7 - (int)now.DayOfWeek) % 7);
-            var auditTime = nextReset.AddHours(-1);
+            // Target Monday 00:00 UTC
+            int daysUntilMonday = ((int)DayOfWeek.Monday - (int)now.DayOfWeek + 7) % 7;
+            var nextReset = now.Date.AddDays(daysUntilMonday);
 
-            if (auditTime <= now)
-                auditTime = auditTime.AddDays(7);
+            // If today is Monday and we're already past reset, schedule next week
+            if (daysUntilMonday == 0 && now >= nextReset)
+                nextReset = nextReset.AddDays(7);
+
+            // Audit runs 1 hour before reset
+            var auditTime = nextReset.AddHours(-1);
 
             return auditTime - now;
         }
+
 
 
         // =====================================================================
