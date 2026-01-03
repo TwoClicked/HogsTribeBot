@@ -192,8 +192,7 @@ namespace TribeBot.Bot.Handlers
                             embed: EmbedHelper.Info(
                                 "Farm Tribe Assignment",
                                 $"You have been **assigned** to the farm tribe **{tribeName}**.\n\n" +
-                                $"**If you are currently in a tribe that is different from {tribeName} then you will be removed 29/12/2025 from this tribe**.\n\n" +
-                                $"If you are already in this tribe, you do not have to do anything but make sure that ALL your registered farms are here! (**Moving begins on 29/12/2025**).")
+                                $"You can now enter and move all your farms to the designated farmtribe.")
                         );
                     }
                     catch

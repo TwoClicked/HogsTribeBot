@@ -19,6 +19,9 @@ namespace TribeBot.Core.Interfaces
 
         Task ReduceReignStrikesAsync(); // called on !lockreign
         Task UpdateFineAsync(FineRecord fine);
+        Task<bool> AddBankFineAsync(Member member, int amount, DateTime weekStartUtc, string reason
+);
+
 
     }
 }

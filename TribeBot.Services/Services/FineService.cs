@@ -152,5 +152,40 @@ namespace TribeBot.Services.Services
             await _dataStore.UpdateFineAsync(fine);
         }
 
+        public async Task<bool> AddBankFineAsync(
+            Member member,
+            int amount,
+            DateTime weekStartUtc,
+            string reason)
+        {
+            var allFines = await _dataStore.GetAllFinesAsync();
+
+            string bankMarker = $"Bank | WeekStart: {weekStartUtc:yyyy-MM-dd}";
+
+            bool alreadyFined = allFines.Any(f =>
+                f.DiscordUserId == member.DiscordUserId &&
+                f.FineType == "Bank" &&
+                f.Notes.Contains(bankMarker));
+
+            if (alreadyFined)
+                return false;
+
+            var fine = new FineRecord
+            {
+                FineId = Guid.NewGuid().ToString(),
+                DiscordUserId = member.DiscordUserId,
+                IngameName = member.IngameName,
+                Amount = amount,
+                PaidAmount = 0,
+                IsPaid = false,
+                FineType = "Bank",
+                Notes = $"{bankMarker} | {reason}",
+                IssuedAtUtc = DateTime.UtcNow,
+                ReignStrikes = 0
+            };
+
+            await _dataStore.AddFineAsync(fine);
+            return true;
+        }
     }
 }

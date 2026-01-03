@@ -54,6 +54,8 @@ namespace TribeBot.Bot.Handlers
             => OfficerLog?.SendMessageAsync(embed: EmbedHelper.Log(title, fields))
                ?? Task.CompletedTask;
 
+        private const int BankFineAmount = 75_000_000;
+
         // ===================================================================
         // ROOT ENTRY
         // ===================================================================
@@ -93,9 +95,17 @@ namespace TribeBot.Bot.Handlers
                 await HandleDonationUpload(message);
                 return true;
             }
+            if (content.StartsWith("!bankfine"))
+            {
+                await HandleBankFineCommand(message);
+                return true;
+            }
+
 
             return false;
         }
+
+
 
         // ===================================================================
         // !BANKUNPAID
@@ -353,6 +363,127 @@ namespace TribeBot.Bot.Handlers
             {
                 await channel.SendMessageAsync(embed: EmbedHelper.Warning(message));
             }
+        }
+
+        // ===================================================================
+        // Test command bank fine command (Unpaid version)
+        // ===================================================================
+        private async Task HandleBankFineCommand(SocketMessage message)
+        {
+            if (!IsOfficer(message)) return;
+
+            var parts = message.Content
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            await HandleBankFineLive(message);
+        }
+
+        private async Task HandleBankFineLive(SocketMessage message)
+        {
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info(
+                    "Bank Fine Processing",
+                    "💸 Issuing bank fines to all unpaid members…"
+                ));
+
+            var members = await _memberService.GetAllMembersAsync();
+            var totals = await _donationService.GetTotalsForAllUsersThisWeekAsync();
+
+            var unpaid = members
+                .Where(m => !m.IsExempt &&
+                    (!totals.ContainsKey(m.DiscordUserId) ||
+                     totals[m.DiscordUserId] <= 0))
+                .ToList();
+
+            if (!unpaid.Any())
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Success("🎉 No unpaid members found."));
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            int daysSinceMonday = ((int)now.DayOfWeek + 6) % 7;
+            DateTime weekStart = now.Date.AddDays(-daysSinceMonday);
+
+            var guild = _client.GetGuild(GuildId);
+
+            int fined = 0;
+            List<string> fineFailures = new();
+            List<string> dmFailures = new();
+
+            foreach (var member in unpaid)
+            {
+                try
+                {
+                    if (await _fineService.AddBankFineAsync(
+                            member,
+                            BankFineAmount,
+                            weekStart,
+                            "Missed weekly bank donation"))
+                    {
+                        fined++;
+                    }
+                }
+                catch
+                {
+                    fineFailures.Add($"{member.IngameName} ({member.DiscordUserId})");
+                    continue;
+                }
+
+                try
+                {
+                    if (guild != null &&
+                        ulong.TryParse(member.DiscordUserId, out ulong uid))
+                    {
+                        var user = guild.GetUser(uid);
+                        if (user != null)
+                        {
+                            var dm = await user.CreateDMChannelAsync();
+                            await dm.SendMessageAsync(
+                                $"💸 **Bank Fine Issued**\n\n" +
+                                $"You did not pay your weekly bank donation.\n" +
+                                $"Fine Amount: **{BankFineAmount:N0}**\n\n" +
+                                $"Please pay in <#{FinePaymentChannelId}>.\nYou have **3 days** to complete payment."
+                            );
+                        }
+                        else
+                        {
+                            dmFailures.Add($"{member.IngameName} — user not found");
+                        }
+                    }
+                }
+                catch
+                {
+                    dmFailures.Add($"{member.IngameName} — DM failed");
+                }
+            }
+
+            var fields = new Dictionary<string, string>
+              {
+                  { "Mode", "LIVE" },
+                  { "Unpaid Members", unpaid.Count.ToString() },
+                  { "Fines Issued", fined.ToString() },
+                  { "Amount", BankFineAmount.ToString("N0") }
+              };
+
+            if (fineFailures.Any())
+                fields["Fine Failures"] = string.Join("\n", fineFailures);
+
+            if (dmFailures.Any())
+                fields["DM Failures"] = string.Join("\n", dmFailures);
+
+            await LogOfficer("Bank Fine Execution", fields);
+
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success(
+                    $"💸 **Bank Fines Completed**\n\n" +
+                    $"• Unpaid members: **{unpaid.Count}**\n" +
+                    $"• Successfully fined: **{fined}**\n" +
+                    $"• Fine amount: **{BankFineAmount:N0}**\n" +
+                    $"• Fine failures: **{fineFailures.Count}**\n" +
+                    $"• DM failures: **{dmFailures.Count}**"
+                ));
         }
 
 

@@ -98,9 +98,59 @@ namespace TribeBot.Bot.Handlers
                 await VerifyPayment(message);
                 return true;
             }
+            if (content.Equals("!unpaidfines"))
+            {
+                await ShowUnpaidFinesByType(message);
+                return true;
+            }
+
 
             return false;
         }
+
+        private async Task ShowUnpaidFinesByType(SocketMessage message)
+        {
+            if (!IsOfficer(message)) return;
+
+            var unpaidFines = (await _fineService.GetUnpaidFinesAsync())
+                .OrderBy(f => f.FineType)
+                .ThenByDescending(f => f.Amount)
+                .ToList();
+
+            if (!unpaidFines.Any())
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Success("🎉 There are no unpaid fines."));
+                return;
+            }
+
+            var grouped = unpaidFines
+                .GroupBy(f => f.FineType)
+                .OrderBy(g => g.Key);
+
+            var description = "";
+
+            foreach (var group in grouped)
+            {
+                description += $"**{group.Key.ToUpper()} FINES**\n";
+
+                foreach (var fine in group)
+                {
+                    int remaining = fine.Amount - fine.PaidAmount;
+
+                    description +=
+                        $"• **{fine.IngameName}** — " +
+                        $"{remaining:N0} remaining " +
+                        $"(FineID `{fine.FineId}`)\n";
+                }
+
+                description += "\n";
+            }
+
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info("Unpaid Fines (By Type)", description));
+        }
+
 
         private async Task RemoveFine(SocketMessage message)
         {

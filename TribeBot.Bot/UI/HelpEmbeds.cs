@@ -56,11 +56,12 @@ namespace TribeBot.Bot.UI
         public static Embed Bank() => new EmbedBuilder()
             .WithTitle("💰 Bank Commands")
             .AddField("Players",
-                "`!checkbank` — Check your weekly donation progress")
-            .AddField("Officers",
+                "`!checkbank` — Check your weekly donation status")
+            .AddField("Officer Only",
                 "`!bankunpaid` — Show unpaid members\n" +
                 "`!payfor` — Pay donations for someone else\n" +
-                "`!bankreminder` — Send donation reminders")
+                "`!bankreminder` — Send donation reminders\n" +
+                "`!bankfine` — Fine all unpaid members")
             .WithColor(Color.Green)
             .Build();
 
@@ -70,11 +71,12 @@ namespace TribeBot.Bot.UI
             .AddField("Players",
                 "`!myfines` — View your fines")
             .AddField("Officer Only",
-                "`!fineuser`\n" +
-                "`!finereign`\n" +
-                "`!finelist`\n" +
-                "`!removefine`\n" +
-                "`!verifiedpayment`")
+                "`!fineuser` — Issue an event fine\n" +
+                "`!finereign` — Issue a reign fine\n" +
+                "`!finelist` — View all fines (full list)\n" +
+                "`!unpaidfines` — View unpaid fines grouped by type\n" +
+                "`!removefine` — Remove a fine by ID\n" +
+                "`!verifiedpayment` — Mark fines as paid")
             .WithColor(Color.DarkGrey)
             .Build();
 
