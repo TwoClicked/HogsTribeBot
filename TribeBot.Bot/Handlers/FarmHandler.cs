@@ -412,6 +412,105 @@ namespace TribeBot.Bot.Handlers
                 ephemeral: true);
         }
 
+        // ======================================================
+        // Farm inactive BULK, To help Officers and player inform about farms that have been off for a period of time, Bot will dm player upon the farm being signald as being offline.
+        // ======================================================
+
+        [SlashCommand("inactivebulk", "Notify a farm owner that multiple farms may be offline")]
+        public async Task MarkFarmsInactiveBulkByFarmId(
+            [Summary("farmid", "Any farm ID owned by the player")] string farmId)
+        {
+            // Officer-only
+            if (Context.User is not SocketGuildUser officer ||
+                !officer.Roles.Any(r => r.Id == OfficerRoleId))
+            {
+                await RespondAsync(
+                    embed: EmbedHelper.Error("You do not have permission to use this command."),
+                    ephemeral: true);
+                return;
+            }
+
+            await DeferAsync(ephemeral: true);
+
+            // Resolve the farm
+            var farm = await _farmService.GetFarmByIdAsync(farmId);
+
+            if (farm == null)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error($"No registered farm found with ID `{farmId}`."),
+                    ephemeral: true);
+                return;
+            }
+
+            // Resolve owner from the farm
+            if (!ulong.TryParse(farm.OwnerDiscordId, out var ownerDiscordId))
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error("Farm owner has an invalid Discord ID on record."),
+                    ephemeral: true);
+                return;
+            }
+
+            var owner = Context.Guild.GetUser(ownerDiscordId);
+
+            if (owner == null)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Warning(
+                        "Farm found, but the owner is no longer in this server."),
+                    ephemeral: true);
+                return;
+            }
+
+            // Fetch all farms for this owner (manual check, not inactivity-based)
+            var farms = await _farmService.GetFarmsForUserAsync(farm.OwnerDiscordId);
+
+            if (farms == null || !farms.Any())
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Info(
+                        "No Farms Found",
+                        "The selected player does not have any registered farms."
+                    ),
+                    ephemeral: true);
+                return;
+            }
+
+            // Fire-and-forget DM
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var dm = await owner.CreateDMChannelAsync();
+
+                    await dm.SendMessageAsync(
+                        embed: EmbedHelper.Info(
+                            "Farm Activity Check",
+                            "An officer has noticed that several of your farms may have been " +
+                            "offline for an extended period of time. Please review them when " +
+                            "you have a moment."
+                        )
+                    );
+                }
+                catch
+                {
+                    await FollowupAsync(
+                        $"Failed to send DM to **{farm.OwnerIngameName}** " +
+                        "(privacy settings or bot blocked).");
+                }
+            });
+
+            await FollowupAsync(
+                embed: EmbedHelper.Success(
+                    $"Owner **{farm.OwnerIngameName}** has been notified about potential " +
+                    "offline farms."
+                ),
+                ephemeral: true);
+        }
+
+
+
 
 
         // ======================================================

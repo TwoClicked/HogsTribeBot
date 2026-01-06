@@ -129,7 +129,6 @@ namespace TribeBot.Bot.Services
                 .WithColor(new Color(0x00A3E0))
                 .AddField("Event", evt.EventName)
                 .AddField("Starts At", $"{evt.EventDateUtc:yyyy-MM-dd HH:mm} UTC")
-                .AddField("Starts In", $"<t:{unix}:R>")
                 .AddField("Message", evt.Message)
                 .Build();
         }

@@ -224,7 +224,7 @@ namespace TribeBot.Bot.Handlers
                     await dm.SendMessageAsync(
                         $"🏦 Hello **{m.IngameName}**, this is your weekly bank donation reminder.\n" +
                         $"Donate in <#{DonationChannelId}>.\n" +
-                        $"You have until 1 hour before weekly reset."
+                        $"You have till 18UTC the day of the reset change. Fines get rolled out around this time."
                     );
 
                     sent++;
