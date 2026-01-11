@@ -6,7 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
-using TribeBot.Bot.UI; // <-- EmbedHelper
+using TribeBot.Bot.UI;
 using TribeBot.Core.Entities;
 using TribeBot.Core.Interfaces;
 using TribeBot.Data.Interfaces;
@@ -23,6 +23,9 @@ namespace TribeBot.Bot.Handlers
         private readonly PaddleOcrServerService _ocrService;
         private readonly IGoogleSheetsDataStore _dataStore;
 
+        // In-memory weekly safeguard (no persistence by design)
+        private DateTime? _lastAutoBankFineWeek;
+
         private readonly Dictionary<ulong, string> _payForOverride = new();
 
         private const ulong DonationChannelId = 1440050111353721053;
@@ -30,6 +33,8 @@ namespace TribeBot.Bot.Handlers
         private const ulong OfficerRoleId = 1222665812775534592;
         private const ulong GuildId = 1109193500664287336;
         private const ulong OfficerLogChannelId = 1440211043820507217;
+
+        private const int BankFineAmount = 75_000_000;
 
         public BankHandler(
             DiscordSocketClient client,
@@ -50,11 +55,9 @@ namespace TribeBot.Bot.Handlers
         private IMessageChannel OfficerLog =>
             _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
 
-        private Task LogOfficer(string title, Dictionary<string, string> fields)
-            => OfficerLog?.SendMessageAsync(embed: EmbedHelper.Log(title, fields))
-               ?? Task.CompletedTask;
-
-        private const int BankFineAmount = 75_000_000;
+        private Task LogOfficer(string title, Dictionary<string, string> fields) =>
+            OfficerLog?.SendMessageAsync(embed: EmbedHelper.Log(title, fields))
+            ?? Task.CompletedTask;
 
         // ===================================================================
         // ROOT ENTRY
@@ -95,17 +98,115 @@ namespace TribeBot.Bot.Handlers
                 await HandleDonationUpload(message);
                 return true;
             }
-            if (content.StartsWith("!bankfine"))
-            {
-                await HandleBankFineCommand(message);
-                return true;
-            }
-
 
             return false;
         }
 
+        // ===================================================================
+        // AUTOMATIC WEEKLY AUDIT + FINE (SUNDAY 18:00 UTC)
+        // ===================================================================
+        public async Task ExecuteWeeklyBankAuditAndFineAsync()
+        {
+            var now = DateTime.UtcNow;
 
+            // Determine Monday week start
+            int daysSinceMonday = ((int)now.DayOfWeek + 6) % 7;
+            DateTime weekStart = now.Date.AddDays(-daysSinceMonday);
+
+            // In-memory safeguard
+            if (_lastAutoBankFineWeek == weekStart)
+                return;
+
+            _lastAutoBankFineWeek = weekStart;
+
+            var members = await _memberService.GetAllMembersAsync();
+            var totals = await _donationService.GetTotalsForAllUsersThisWeekAsync();
+
+            var unpaid = members
+                .Where(m => !m.IsExempt &&
+                    (!totals.ContainsKey(m.DiscordUserId) ||
+                     totals[m.DiscordUserId] <= 0))
+                .ToList();
+
+            await LogOfficer("Weekly Bank Audit (Auto)", new()
+            {
+                { "Week", weekStart.ToString("yyyy-MM-dd") },
+                { "Unpaid Members", unpaid.Count.ToString() }
+            });
+
+            if (!unpaid.Any())
+                return;
+
+            var guild = _client.GetGuild(GuildId);
+
+            int fined = 0;
+            List<string> fineFailures = new();
+            List<string> dmFailures = new();
+
+            foreach (var member in unpaid)
+            {
+                try
+                {
+                    if (await _fineService.AddBankFineAsync(
+                        member,
+                        BankFineAmount,
+                        weekStart,
+                        "Missed weekly bank donation"))
+                    {
+                        fined++;
+                    }
+                }
+                catch
+                {
+                    fineFailures.Add($"{member.IngameName} ({member.DiscordUserId})");
+                    continue;
+                }
+
+                try
+                {
+                    if (guild != null &&
+                        ulong.TryParse(member.DiscordUserId, out ulong uid))
+                    {
+                        var user = guild.GetUser(uid);
+                        if (user != null)
+                        {
+                            var dm = await user.CreateDMChannelAsync();
+                            await dm.SendMessageAsync(
+                                $"💸 **Automatic Bank Fine Issued**\n\n" +
+                                $"You did not pay your weekly bank donation.\n" +
+                                $"Fine Amount: **{BankFineAmount:N0}**\n\n" +
+                                $"Please pay in <#{FinePaymentChannelId}>.\n" +
+                                $"You have **3 days** to complete payment."
+                            );
+                        }
+                        else
+                        {
+                            dmFailures.Add($"{member.IngameName} — user not found");
+                        }
+                    }
+                }
+                catch
+                {
+                    dmFailures.Add($"{member.IngameName} — DM failed");
+                }
+            }
+
+            var fields = new Dictionary<string, string>
+            {
+                { "Mode", "AUTO (Sunday 18:00 UTC)" },
+                { "Unpaid Members", unpaid.Count.ToString() },
+                { "Fines Issued", fined.ToString() },
+                { "Amount", BankFineAmount.ToString("N0") }
+            };
+
+            if (fineFailures.Any())
+                fields["Fine Failures"] = string.Join("\n", fineFailures);
+
+            if (dmFailures.Any())
+                fields["DM Failures"] = string.Join("\n", dmFailures);
+
+            await LogOfficer("Weekly Bank Fines Issued", fields);
+        }
 
         // ===================================================================
         // !BANKUNPAID
@@ -117,8 +218,8 @@ namespace TribeBot.Bot.Handlers
 
             var unpaid = members
                 .Where(m => !m.IsExempt &&
-                            (!totals.ContainsKey(m.DiscordUserId) ||
-                             totals[m.DiscordUserId] <= 0))
+                    (!totals.ContainsKey(m.DiscordUserId) ||
+                     totals[m.DiscordUserId] <= 0))
                 .ToList();
 
             if (!unpaid.Any())
@@ -131,9 +232,7 @@ namespace TribeBot.Bot.Handlers
             string list = string.Join("\n", unpaid.Select(u => $"• **{u.IngameName}**"));
 
             await message.Channel.SendMessageAsync(embed:
-                EmbedHelper.Warning(
-                    $"❌ **Unpaid Members (This Week)**\n\n{list}"
-                ));
+                EmbedHelper.Warning($"❌ **Unpaid Members (This Week)**\n\n{list}"));
         }
 
         // ===================================================================
@@ -169,7 +268,8 @@ namespace TribeBot.Bot.Handlers
             {
                 await message.Channel.SendMessageAsync(embed:
                     EmbedHelper.Error(
-                        $"You have **NOT** paid your weekly donation.\nUpload your screenshot in <#{DonationChannelId}>."
+                        $"You have **NOT** paid your weekly donation.\n" +
+                        $"Upload your screenshot in <#{DonationChannelId}>."
                     ));
             }
         }
@@ -199,8 +299,8 @@ namespace TribeBot.Bot.Handlers
 
             var unpaid = members
                 .Where(m => !m.IsExempt &&
-                            (!totals.ContainsKey(m.DiscordUserId) ||
-                             totals[m.DiscordUserId] <= 0))
+                    (!totals.ContainsKey(m.DiscordUserId) ||
+                     totals[m.DiscordUserId] <= 0))
                 .ToList();
 
             int sent = 0;
@@ -208,23 +308,28 @@ namespace TribeBot.Bot.Handlers
 
             foreach (var m in unpaid)
             {
-                ulong userId = ulong.Parse(m.DiscordUserId);
-                var user = guild.GetUser(userId);
+                if (!ulong.TryParse(m.DiscordUserId, out ulong uid))
+                {
+                    failed.Add(0);
+                    continue;
+                }
 
+                var user = guild.GetUser(uid);
                 if (user == null)
                 {
-                    failed.Add(userId);
+                    failed.Add(uid);
                     continue;
                 }
 
                 try
                 {
                     var dm = await user.CreateDMChannelAsync();
-
                     await dm.SendMessageAsync(
-                        $"🏦 Hello **{m.IngameName}**, this is your weekly bank donation reminder.\n" +
-                        $"Donate in <#{DonationChannelId}>.\n" +
-                        $"You have till 18UTC the day of the reset change. Fines get rolled out around this time."
+                        $"🏦 **Bank Donation Reminder**\n\n" +
+                        $"Hello **{m.IngameName}**,\n" +
+                        $"You have not paid your weekly bank donation.\n\n" +
+                        $"Please donate in <#{DonationChannelId}>.\n" +
+                        $"Fines are issued at **18:00 UTC on Sunday**."
                     );
 
                     sent++;
@@ -232,19 +337,11 @@ namespace TribeBot.Bot.Handlers
                 }
                 catch
                 {
-                    failed.Add(userId);
-
-                    await LogOfficer("Bank Reminder DM Failure", new()
-                    {
-                        { "UserId", user.Id.ToString()},
-                        { "UserName", user.DisplayName }
-                    });
+                    failed.Add(uid);
                 }
             }
 
-            var channel = guildChannel as IMessageChannel;
-
-            if (channel != null)
+            if (guildChannel is IMessageChannel channel)
             {
                 await channel.SendMessageAsync(embed:
                     EmbedHelper.Info("📩 Bank Reminder Summary",
@@ -252,6 +349,7 @@ namespace TribeBot.Bot.Handlers
                         $"• DMs Sent: **{sent}**\n" +
                         $"• Failed: **{failed.Count}**"));
             }
+
         }
 
         // ===================================================================
@@ -277,13 +375,11 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            // Payfor @mention
             if (message.MentionedUsers.Any())
             {
                 var target = message.MentionedUsers.First();
-                string targetId = target.Id.ToString();
+                var member = await _memberService.GetMemberByDiscordIdAsync(target.Id.ToString());
 
-                var member = await _memberService.GetMemberByDiscordIdAsync(targetId);
                 if (member == null)
                 {
                     await message.Channel.SendMessageAsync(embed:
@@ -291,204 +387,27 @@ namespace TribeBot.Bot.Handlers
                     return;
                 }
 
-                _payForOverride[userId] = $"DISCORD:{targetId}";
-
+                _payForOverride[userId] = $"DISCORD:{target.Id}";
                 await message.Channel.SendMessageAsync(embed:
                     EmbedHelper.Success($"Your next upload will count for **{target.Username}**."));
                 return;
             }
 
-            // Payfor by name
             var allMembers = await _memberService.GetAllMembersAsync();
-            var matches = allMembers
-                .Where(m => m.IngameName.Equals(args, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            var match = allMembers.FirstOrDefault(m =>
+                m.IngameName.Equals(args, StringComparison.OrdinalIgnoreCase));
 
-            if (!matches.Any())
+            if (match == null)
             {
                 await message.Channel.SendMessageAsync(embed:
                     EmbedHelper.Error($"No registered member found named **{args}**."));
                 return;
             }
 
-            if (matches.Count > 1)
-            {
-                await message.Channel.SendMessageAsync(embed:
-                    EmbedHelper.Warning($"Multiple members found with name **{args}**. Use @mention instead."));
-                return;
-            }
-
             _payForOverride[userId] = $"NAME:{args}";
-
             await message.Channel.SendMessageAsync(embed:
                 EmbedHelper.Success($"Your next upload will count for **{args}**."));
         }
-
-
-        // ===================================================================
-        // Logging for unpaid bank members
-        // ===================================================================
-
-        public async Task LogUnpaidBeforeResetAsync()
-        {
-            var members = await _memberService.GetAllMembersAsync();
-            var totals = await _donationService.GetTotalsForAllUsersThisWeekAsync();
-
-            var unpaid = members
-                .Where(m => !m.IsExempt &&
-                            (!totals.ContainsKey(m.DiscordUserId) ||
-                             totals[m.DiscordUserId] <= 0))
-                .ToList();
-
-            string message;
-
-            if (!unpaid.Any())
-            {
-                message = "🎉 **Weekly Bank Audit (Pre-Reset)**\n\nAll members have paid or are exempt.";
-            }
-            else
-            {
-                string list = string.Join("\n", unpaid.Select(m =>
-                    $"• **{m.IngameName}** ({m.IngameId}, {m.DiscordUserId})"));
-
-                message =
-                    "📋 **Weekly Bank Audit (Pre-Reset)**\n\n" +
-                    "**Unpaid Members:**\n" +
-                    list;
-            }
-
-            var channel = _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
-
-            if (channel != null)
-            {
-                await channel.SendMessageAsync(embed: EmbedHelper.Warning(message));
-            }
-        }
-
-        // ===================================================================
-        // Test command bank fine command (Unpaid version)
-        // ===================================================================
-        private async Task HandleBankFineCommand(SocketMessage message)
-        {
-            if (!IsOfficer(message)) return;
-
-            var parts = message.Content
-                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-            await HandleBankFineLive(message);
-        }
-
-        private async Task HandleBankFineLive(SocketMessage message)
-        {
-            await message.Channel.SendMessageAsync(embed:
-                EmbedHelper.Info(
-                    "Bank Fine Processing",
-                    "💸 Issuing bank fines to all unpaid members…"
-                ));
-
-            var members = await _memberService.GetAllMembersAsync();
-            var totals = await _donationService.GetTotalsForAllUsersThisWeekAsync();
-
-            var unpaid = members
-                .Where(m => !m.IsExempt &&
-                    (!totals.ContainsKey(m.DiscordUserId) ||
-                     totals[m.DiscordUserId] <= 0))
-                .ToList();
-
-            if (!unpaid.Any())
-            {
-                await message.Channel.SendMessageAsync(embed:
-                    EmbedHelper.Success("🎉 No unpaid members found."));
-                return;
-            }
-
-            var now = DateTime.UtcNow;
-            int daysSinceMonday = ((int)now.DayOfWeek + 6) % 7;
-            DateTime weekStart = now.Date.AddDays(-daysSinceMonday);
-
-            var guild = _client.GetGuild(GuildId);
-
-            int fined = 0;
-            List<string> fineFailures = new();
-            List<string> dmFailures = new();
-
-            foreach (var member in unpaid)
-            {
-                try
-                {
-                    if (await _fineService.AddBankFineAsync(
-                            member,
-                            BankFineAmount,
-                            weekStart,
-                            "Missed weekly bank donation"))
-                    {
-                        fined++;
-                    }
-                }
-                catch
-                {
-                    fineFailures.Add($"{member.IngameName} ({member.DiscordUserId})");
-                    continue;
-                }
-
-                try
-                {
-                    if (guild != null &&
-                        ulong.TryParse(member.DiscordUserId, out ulong uid))
-                    {
-                        var user = guild.GetUser(uid);
-                        if (user != null)
-                        {
-                            var dm = await user.CreateDMChannelAsync();
-                            await dm.SendMessageAsync(
-                                $"💸 **Bank Fine Issued**\n\n" +
-                                $"You did not pay your weekly bank donation.\n" +
-                                $"Fine Amount: **{BankFineAmount:N0}**\n\n" +
-                                $"Please pay in <#{FinePaymentChannelId}>.\nYou have **3 days** to complete payment."
-                            );
-                        }
-                        else
-                        {
-                            dmFailures.Add($"{member.IngameName} — user not found");
-                        }
-                    }
-                }
-                catch
-                {
-                    dmFailures.Add($"{member.IngameName} — DM failed");
-                }
-            }
-
-            var fields = new Dictionary<string, string>
-              {
-                  { "Mode", "LIVE" },
-                  { "Unpaid Members", unpaid.Count.ToString() },
-                  { "Fines Issued", fined.ToString() },
-                  { "Amount", BankFineAmount.ToString("N0") }
-              };
-
-            if (fineFailures.Any())
-                fields["Fine Failures"] = string.Join("\n", fineFailures);
-
-            if (dmFailures.Any())
-                fields["DM Failures"] = string.Join("\n", dmFailures);
-
-            await LogOfficer("Bank Fine Execution", fields);
-
-            await message.Channel.SendMessageAsync(embed:
-                EmbedHelper.Success(
-                    $"💸 **Bank Fines Completed**\n\n" +
-                    $"• Unpaid members: **{unpaid.Count}**\n" +
-                    $"• Successfully fined: **{fined}**\n" +
-                    $"• Fine amount: **{BankFineAmount:N0}**\n" +
-                    $"• Fine failures: **{fineFailures.Count}**\n" +
-                    $"• DM failures: **{dmFailures.Count}**"
-                ));
-        }
-
-
-
-
 
         // ===================================================================
         // OCR DONATION HANDLING
@@ -561,7 +480,6 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            // Save donation
             var now = DateTime.UtcNow;
             int daysSinceMonday = ((int)now.DayOfWeek + 6) % 7;
             DateTime weekStart = now.Date.AddDays(-daysSinceMonday);
@@ -578,7 +496,6 @@ namespace TribeBot.Bot.Handlers
             });
 
             await message.AddReactionAsync(new Emoji("✅"));
-
             await message.Channel.SendMessageAsync(embed:
                 EmbedHelper.Success("Your donation has been recorded."));
         }
@@ -595,7 +512,7 @@ namespace TribeBot.Bot.Handlers
                 return false;
             }
 
-            var user = (message.Channel as SocketGuildChannel)!.GetUser(message.Author.Id);
+            var user = ((SocketGuildChannel)message.Channel).GetUser(message.Author.Id);
 
             if (user == null || !user.Roles.Any(r => r.Id == OfficerRoleId))
             {

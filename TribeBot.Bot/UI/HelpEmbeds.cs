@@ -60,8 +60,7 @@ namespace TribeBot.Bot.UI
             .AddField("Officer Only",
                 "`!bankunpaid` — Show unpaid members\n" +
                 "`!payfor` — Pay donations for someone else\n" +
-                "`!bankreminder` — Send donation reminders\n" +
-                "`!bankfine` — Fine all unpaid members")
+                "`!bankreminder` — Send donation reminders\n")
             .WithColor(Color.Green)
             .Build();
 
@@ -76,6 +75,7 @@ namespace TribeBot.Bot.UI
                 "`!finelist` — View all fines (full list)\n" +
                 "`!unpaidfines` — View unpaid fines grouped by type\n" +
                 "`!removefine` — Remove a fine by ID\n" +
+                "`!unpaidfines` — Show all unpaid fines, sorted\n" +
                 "`!verifiedpayment` — Mark fines as paid")
             .WithColor(Color.DarkGrey)
             .Build();

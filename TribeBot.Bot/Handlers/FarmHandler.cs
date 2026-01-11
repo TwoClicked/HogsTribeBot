@@ -21,6 +21,7 @@ namespace TribeBot.Bot.Handlers
 
         //officer role id
         private const ulong OfficerRoleId = 1222665812775534592;
+        private const ulong FarmManagerRoleId = 1458892024588669134;
 
         // Farm registration role
         private const ulong HogsRole = 1222668156271591485;
@@ -271,15 +272,19 @@ namespace TribeBot.Bot.Handlers
         public async Task TrackFarm(
             [Summary("farmid", "Farm ingame ID")] string farmId)
         {
-            //var user = Context.User as SocketGuildUser;
 
-            //if (user == null || !user.Roles.Any(r => r.Id == OfficerRoleId))
-            //{
-            //    await RespondAsync(
-            //        embed: EmbedHelper.Error("You do not have permission to use this command."),
-            //        ephemeral: true);
-            //    return;
-            //}
+            // Officer-only (Officer OR Farm Manager)
+            if (Context.User is not SocketGuildUser officer ||
+                !officer.Roles.Any(r =>
+                    r.Id == OfficerRoleId ||
+                    r.Id == FarmManagerRoleId))
+            {
+                await RespondAsync(
+                    embed: EmbedHelper.Error("You do not have permission to use this command."),
+                    ephemeral: true);
+                return;
+            }
+
 
             await DeferAsync(ephemeral: true);
 
@@ -352,15 +357,18 @@ namespace TribeBot.Bot.Handlers
         public async Task MarkFarmInactive(
             [Summary("farmid", "Farm ingame ID")] string farmId)
         {
-            // Officer-only
+            // Officer-only (Officer OR Farm Manager)
             if (Context.User is not SocketGuildUser officer ||
-                !officer.Roles.Any(r => r.Id == OfficerRoleId))
+                !officer.Roles.Any(r =>
+                    r.Id == OfficerRoleId ||
+                    r.Id == FarmManagerRoleId))
             {
                 await RespondAsync(
                     embed: EmbedHelper.Error("You do not have permission to use this command."),
                     ephemeral: true);
                 return;
             }
+
 
             await DeferAsync(ephemeral: true);
 
@@ -420,15 +428,18 @@ namespace TribeBot.Bot.Handlers
         public async Task MarkFarmsInactiveBulkByFarmId(
             [Summary("farmid", "Any farm ID owned by the player")] string farmId)
         {
-            // Officer-only
+            // Officer-only (Officer OR Farm Manager)
             if (Context.User is not SocketGuildUser officer ||
-                !officer.Roles.Any(r => r.Id == OfficerRoleId))
+                !officer.Roles.Any(r =>
+                    r.Id == OfficerRoleId ||
+                    r.Id == FarmManagerRoleId))
             {
                 await RespondAsync(
                     embed: EmbedHelper.Error("You do not have permission to use this command."),
                     ephemeral: true);
                 return;
             }
+
 
             await DeferAsync(ephemeral: true);
 

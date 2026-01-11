@@ -522,14 +522,24 @@ namespace TribeBot.Bot.Handlers
             await message.Channel.SendMessageAsync(embed:
                 EmbedHelper.Info("Fine Reminder", "📨 Sending fine reminders in the background…"));
 
-            _ = Task.Run(async () => await SendFineReminderBackground(message));
+            await SendLog("Fine Reminder Started", new()
+                                                                        {
+                                                                            { "Triggered By", message.Author.Username }
+                                                                        });
+
+            _ = Task.Run(async () =>
+            {
+                if (message.Channel is SocketGuildChannel gc)
+                    await SendFineReminderBackground(gc, message.Author.Username);
+            });
         }
 
-        private async Task SendFineReminderBackground(SocketMessage message)
-        {
-            var guild = (message.Channel as SocketGuildChannel)?.Guild;
-            if (guild == null) return;
 
+        private async Task SendFineReminderBackground(
+            SocketGuildChannel guildChannel,
+            string triggeredBy)
+        {
+            var guild = guildChannel.Guild;
             var allFines = await _fineService.GetAllFinesAsync();
 
             var unpaidUsers = allFines
@@ -545,15 +555,22 @@ namespace TribeBot.Bot.Handlers
 
             int sent = 0;
             int failed = 0;
+            List<string> failures = new();
 
             foreach (var entry in unpaidUsers)
             {
-                ulong uid = ulong.Parse(entry.UserId);
-                var user = guild.GetUser(uid);
+                if (!ulong.TryParse(entry.UserId, out ulong uid))
+                {
+                    failed++;
+                    failures.Add($"Invalid DiscordId: {entry.UserId}");
+                    continue;
+                }
 
+                var user = guild.GetUser(uid);
                 if (user == null)
                 {
                     failed++;
+                    failures.Add($"User not found: {uid}");
                     continue;
                 }
 
@@ -562,8 +579,9 @@ namespace TribeBot.Bot.Handlers
                     var dm = await user.CreateDMChannelAsync();
                     await dm.SendMessageAsync(
                         $"💀 **Fine Reminder**\n\n" +
-                        $"You currently have **{entry.Count} unpaid fine(s)** totaling **{entry.TotalOwed:N0}**.\n" +
-                        $"Please pay them in <#{FinePaymentChannelId}>.\n\n" +
+                        $"You currently have **{entry.Count} unpaid fine(s)** " +
+                        $"totaling **{entry.TotalOwed:N0}**.\n\n" +
+                        $"Please pay in <#{FinePaymentChannelId}>.\n" +
                         $"If you believe this is incorrect, contact an officer."
                     );
 
@@ -573,22 +591,39 @@ namespace TribeBot.Bot.Handlers
                 catch
                 {
                     failed++;
-                    await SendLog("Fine Reminder Failure", new()
-                    {
-                        { "User", uid.ToString() },
-                        { "Reason", "DM failed" }
-                    });
+                    failures.Add($"{user.Username} ({uid}) — DM failed");
                     await Task.Delay(1500);
                 }
             }
 
-            await message.Channel.SendMessageAsync(embed:
-                EmbedHelper.Info("Fine Reminder Summary",
-                    $"📨 **Fine reminders completed**\n\n" +
-                    $"• Users with unpaid fines: **{unpaidUsers.Count}**\n" +
-                    $"• DMs sent: **{sent}**\n" +
-                    $"• Failed deliveries: **{failed}**"));
+            // Officer log summary
+            var fields = new Dictionary<string, string>
+                            {
+                                { "Triggered By", triggeredBy },
+                                { "Users With Unpaid Fines", unpaidUsers.Count.ToString() },
+                                { "DMs Sent", sent.ToString() },
+                                { "Failures", failed.ToString() }
+                            };
+
+            if (failures.Any())
+                fields["Failure Details"] = string.Join("\n", failures.Take(10));
+
+            await SendLog("Fine Reminder Completed", fields);
+
+            // Feedback to invoking channel
+            if (guildChannel is IMessageChannel channel)
+            {
+                await channel.SendMessageAsync(embed:
+                    EmbedHelper.Info("Fine Reminder Summary",
+                        $"📨 **Fine reminders completed**\n\n" +
+                        $"• Users with unpaid fines: **{unpaidUsers.Count}**\n" +
+                        $"• DMs sent: **{sent}**\n" +
+                        $"• Failed deliveries: **{failed}**"
+                    ));
+            }
         }
+
+
 
         // ======================================================================
         // OFFICER CHECK

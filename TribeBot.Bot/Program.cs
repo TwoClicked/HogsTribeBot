@@ -162,23 +162,24 @@ namespace TribeBot.Bot
                     {
                         while (true)
                         {
-                            var delay = GetDelayUntilPreReset();
+                            var delay = GetDelayUntilSunday18Utc();
                             await Task.Delay(delay);
 
                             try
                             {
-                                await _bankHandler.LogUnpaidBeforeResetAsync();
+                                await _bankHandler.ExecuteWeeklyBankAuditAndFineAsync();
                             }
                             catch (Exception ex)
                             {
-                                Console.WriteLine($"[Bank Audit Error] {ex}");
+                                Console.WriteLine($"[Weekly Bank Fine Error] {ex}");
                             }
 
-                            // Sleep past reset so it never fires twice
-                            await Task.Delay(TimeSpan.FromHours(2));
+                            // Sleep far enough to guarantee single execution
+                            await Task.Delay(TimeSpan.FromHours(6));
                         }
                     });
                 }
+
 
                 _services.GetRequiredService<SchedulerService>().Start();
 
@@ -238,25 +239,22 @@ namespace TribeBot.Bot
         // =====================================================================
         // unpaid BANK helper
         // =====================================================================
-        private static TimeSpan GetDelayUntilPreReset()
+        private static TimeSpan GetDelayUntilSunday18Utc()
         {
             var now = DateTime.UtcNow;
 
-            // Target Monday 00:00 UTC
-            int daysUntilMonday = ((int)DayOfWeek.Monday - (int)now.DayOfWeek + 7) % 7;
-            var nextReset = now.Date.AddDays(daysUntilMonday);
+            int daysUntilSunday =
+                ((int)DayOfWeek.Sunday - (int)now.DayOfWeek + 7) % 7;
 
-            // If today is Monday and we're already past reset, schedule next week
-            if (daysUntilMonday == 0 && now >= nextReset)
-                nextReset = nextReset.AddDays(7);
+            var target = now.Date
+                .AddDays(daysUntilSunday)
+                .AddHours(18); // 18:00 UTC
 
-            // Audit runs 1 hour before reset
-            var auditTime = nextReset.AddHours(-1);
+            if (daysUntilSunday == 0 && now >= target)
+                target = target.AddDays(7);
 
-            return auditTime - now;
+            return target - now;
         }
-
-
 
         // =====================================================================
         // LOGGING
