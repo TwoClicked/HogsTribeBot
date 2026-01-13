@@ -2,7 +2,9 @@
 using Google.Apis.Services;
 using Google.Apis.Sheets.v4;
 using Google.Apis.Sheets.v4.Data;
+using System.Globalization;
 using TribeBot.Core.Entities;
+using TribeBot.Core.Enums;
 using TribeBot.Data.Interfaces;
 
 
@@ -24,6 +26,11 @@ namespace TribeBot.Data.GoogleSheets
         private const string FarmTribesSheet = "FarmTribes";
         private const string FarmsSheet = "Farms";
         private const string FarmTribesAssignmentsSheet = "FarmTribeAssignments";
+        private const string KvKEventsSheet = "KvKEvents";
+        private const string KvKTimedEventsSheet = "KvKTimedEvents";
+        private const string RaidEventsSheet = "RaidEvents";
+        private const string RaidSignupsSheet = "RaidSignups";
+
 
 
         //Multiple use Gid's 
@@ -1247,7 +1254,7 @@ namespace TribeBot.Data.GoogleSheets
             {
                 Range = new Google.Apis.Sheets.v4.Data.DimensionRange
                 {
-                    SheetId = GetFarmTribesSheetId(), 
+                    SheetId = GetFarmTribesSheetId(),
                     Dimension = "ROWS",
                     StartIndex = row - 1, // inclusive
                     EndIndex = row        // exclusive
@@ -1568,6 +1575,343 @@ namespace TribeBot.Data.GoogleSheets
             }
 
             return list;
+        }
+
+        public async Task AddKvKEventAsync(KvKEvent kvk)
+        {
+            var values = new List<IList<object>>
+             {
+                 new List<object>
+                 {
+                     kvk.KvKId,
+                     kvk.Name,
+                     kvk.StartUtc.ToString("o"),
+                     kvk.EndUtc.ToString("o"),
+                     kvk.IsActive
+                 }
+             };
+
+            var append = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange { Values = values },
+                _spreadsheetId,
+                $"{KvKEventsSheet}!A:E"
+            );
+
+            append.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.AppendRequest
+                    .ValueInputOptionEnum.USERENTERED;
+
+            await append.ExecuteAsync();
+        }
+
+
+        public async Task<List<KvKEvent>> GetAllKvKEventsAsync()
+        {
+            var response = await _sheetsService.Spreadsheets.Values
+                .Get(_spreadsheetId, $"{KvKEventsSheet}!A2:E")
+                .ExecuteAsync();
+
+            var list = new List<KvKEvent>();
+            if (response.Values == null) return list;
+
+            foreach (var row in response.Values)
+            {
+                if (row.Count < 5) continue;
+
+                list.Add(new KvKEvent
+                {
+                    KvKId = row[0].ToString(),
+                    Name = row[1].ToString(),
+                    StartUtc = DateTime.SpecifyKind(
+                    DateTime.Parse(row[2].ToString()),
+                    DateTimeKind.Utc
+                ),
+                    EndUtc = DateTime.SpecifyKind(
+                    DateTime.Parse(row[3].ToString()),
+                    DateTimeKind.Utc
+                ),
+                    IsActive = bool.Parse(row[4].ToString())
+                });
+            }
+
+            return list;
+        }
+
+        public async Task UpdateKvKEventAsync(KvKEvent kvk)
+        {
+            var all = await GetAllKvKEventsAsync();
+            int index = all.FindIndex(x => x.KvKId == kvk.KvKId);
+            if (index == -1)
+                return;
+
+            int row = index + 2; // +2 because row 1 is headers
+
+            var values = new List<object>
+               {
+                   kvk.KvKId,
+                   kvk.Name,
+                   kvk.StartUtc.ToString("o"),
+                   kvk.EndUtc.ToString("o"),
+                   kvk.IsActive
+               };
+
+            var request = _sheetsService.Spreadsheets.Values.Update(
+                new ValueRange
+                {
+                    Values = new List<IList<object>> { values }
+                },
+                _spreadsheetId,
+                $"{KvKEventsSheet}!A{row}:E{row}"
+            );
+
+            request.ValueInputOption =
+                Google.Apis.Sheets.v4.SpreadsheetsResource.ValuesResource
+                    .UpdateRequest.ValueInputOptionEnum.RAW;
+
+            await request.ExecuteAsync();
+        }
+
+
+        public async Task<KvKEvent?> GetActiveKvKAsync()
+        {
+            var all = await GetAllKvKEventsAsync();
+            return all.FirstOrDefault(x => x.IsActive);
+        }
+        public async Task AddKvKTimedEventAsync(KvKTimedEvent evt)
+        {
+            var values = new List<object>
+            {
+                evt.EventId,
+                evt.KvKId,
+                evt.EventType,
+                evt.StartUtc.ToString("o"),
+                evt.AnnouncementSent
+            };
+
+            var request = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange
+                {
+                    Values = new List<IList<object>> { values }
+                },
+                _spreadsheetId,
+                $"{KvKTimedEventsSheet}!A:E"
+            );
+
+            request.ValueInputOption =
+                Google.Apis.Sheets.v4.SpreadsheetsResource.ValuesResource
+                    .AppendRequest.ValueInputOptionEnum.RAW;
+
+            await request.ExecuteAsync();
+        }
+
+
+        public async Task<List<KvKTimedEvent>> GetAllKvKTimedEventsAsync()
+        {
+            var response = await _sheetsService.Spreadsheets.Values
+                .Get(_spreadsheetId, $"{KvKTimedEventsSheet}!A2:E")
+                .ExecuteAsync();
+
+            var list = new List<KvKTimedEvent>();
+            if (response.Values == null) return list;
+
+            foreach (var row in response.Values)
+            {
+                if (row.Count < 5) continue;
+
+                list.Add(new KvKTimedEvent
+                {
+                    EventId = row[0].ToString(),
+                    KvKId = row[1].ToString(),
+                    EventType = row[2].ToString(),
+                    StartUtc = DateTime.SpecifyKind(
+                        DateTime.Parse(row[3].ToString()),
+                        DateTimeKind.Utc
+                    ),
+                    AnnouncementSent = bool.Parse(row[4].ToString())
+                });
+            }
+
+            return list;
+        }
+
+        public async Task<List<KvKTimedEvent>> GetTimedEventsForKvKAsync(string kvkId)
+        {
+            var all = await GetAllKvKTimedEventsAsync();
+            return all.Where(x => x.KvKId == kvkId).ToList();
+        }
+
+        public async Task UpdateKvKTimedEventAsync(KvKTimedEvent evt)
+        {
+            var all = await GetAllKvKTimedEventsAsync();
+            int index = all.FindIndex(x => x.EventId == evt.EventId);
+            if (index == -1) return;
+
+            int row = index + 2;
+
+            var values = new List<object>
+    {
+        evt.EventId,
+        evt.KvKId,
+        evt.EventType,
+        evt.StartUtc.ToString("o"),
+        evt.AnnouncementSent
+    };
+
+            var request = _sheetsService.Spreadsheets.Values.Update(
+                new ValueRange
+                {
+                    Values = new List<IList<object>> { values }
+                },
+                _spreadsheetId,
+                $"{KvKTimedEventsSheet}!A{row}:E{row}"
+            );
+            request.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+
+            await request.ExecuteAsync();
+        }
+
+        public async Task CreateRaidAsync(Raid raid)
+        {
+            var values = new List<object>
+            {
+                raid.RaidId,
+                raid.RaidType.ToString(),
+                raid.StartUtc.ToString("o"),
+                raid.ChannelId.ToString(),
+                raid.MessageId.ToString(),
+                raid.IsClosed.ToString().ToLower()
+            };
+
+            var request = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange
+                {
+                    Values = new List<IList<object>> { values }
+                },
+                _spreadsheetId,
+                $"{RaidEventsSheet}!A:F"
+            );
+
+            request.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.RAW;
+
+            await request.ExecuteAsync();
+
+        }
+
+        public async Task<Raid?> GetRaidByMessageIdAsync(ulong messageId)
+        {
+            var all = await GetAllRaidsAsync();
+            return all.FirstOrDefault(r => r.MessageId == messageId);
+        }
+
+        public async Task UpsertRaidSignupAsync(RaidSignup signup)
+        {
+            var all = await GetAllRaidSignupsAsync();
+            var index = all.FindIndex(s =>
+                s.RaidId == signup.RaidId &&
+                s.UserId == signup.UserId);
+
+            var values = new List<object>
+    {
+        signup.RaidId,
+        signup.UserId.ToString(),
+        signup.Response.ToString(),
+        signup.UpdatedUtc.ToString("o")
+    };
+
+            if (index == -1)
+            {
+                var request = _sheetsService.Spreadsheets.Values.Append(
+                    new ValueRange
+                    {
+                        Values = new List<IList<object>> { values }
+                    },
+                    _spreadsheetId,
+                    $"{RaidSignupsSheet}!A:D"
+                );
+
+                request.ValueInputOption =
+                    SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.RAW;
+
+                await request.ExecuteAsync();
+            }
+            else
+            {
+                int row = index + 2;
+
+                var request = _sheetsService.Spreadsheets.Values.Update(
+                    new ValueRange
+                    {
+                        Values = new List<IList<object>> { values }
+                    },
+                    _spreadsheetId,
+                    $"{RaidSignupsSheet}!A{row}:D{row}"
+                );
+
+                request.ValueInputOption =
+                    SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.RAW;
+
+                await request.ExecuteAsync();
+
+            }
+        }
+
+        public async Task<List<RaidSignup>> GetRaidSignupsAsync(string raidId)
+        {
+            var all = await GetAllRaidSignupsAsync();
+            return all.Where(s => s.RaidId == raidId).ToList();
+        }
+
+
+
+        //Raid helpers
+        private async Task<List<RaidSignup>> GetAllRaidSignupsAsync()
+        {
+            var response = await _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{RaidSignupsSheet}!A:D"
+            ).ExecuteAsync();
+
+            var rows = response.Values?.Skip(1) ?? Enumerable.Empty<IList<object>>();
+
+            return rows.Select(r => new RaidSignup
+            {
+                RaidId = r[0].ToString()!,
+                UserId = ulong.Parse(r[1].ToString()!,CultureInfo.InvariantCulture),
+                Response = Enum.Parse<RaidSignupResponse>(r[2].ToString()!),
+                UpdatedUtc = DateTime.Parse(r[3].ToString()!).ToUniversalTime()
+            }).ToList();
+        }
+
+
+        private async Task<List<Raid>> GetAllRaidsAsync()
+        {
+            var response = await _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{RaidEventsSheet}!A:F"
+            ).ExecuteAsync();
+
+            var rows = response.Values?.Skip(1) ?? Enumerable.Empty<IList<object>>();
+
+            // Column indexes (NOT values)
+            const int RaidIdColumn = 0;
+            const int RaidTypeColumn = 1;
+            const int StartUtcColumn = 2;
+            const int ChannelIdColumn = 3;
+            const int MessageIdColumn = 4;
+            const int IsClosedColumn = 5;
+
+            return rows.Select(r => new Raid
+            {
+                RaidId = r[0].ToString()!,
+                RaidType = Enum.Parse<RaidType>(r[1].ToString()!),
+                StartUtc = DateTime.Parse(r[2].ToString()!).ToUniversalTime(),
+                ChannelId = ulong.Parse(r[3].ToString()!, CultureInfo.InvariantCulture),
+                MessageId = ulong.Parse(r[4].ToString()!, CultureInfo.InvariantCulture),
+                IsClosed = bool.Parse(r[5].ToString()!)
+            }).ToList();
+
         }
 
     }

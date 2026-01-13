@@ -199,6 +199,55 @@ namespace TribeBot.Data.Interfaces
         Task RemoveAssignmentAsync(string discordUserId);
         Task<List<PlayerFarmTribeAssignment>> GetAllAssignmentsAsync();
 
+        // ==========================================================================
+        // KVK EVENTS
+        // ==========================================================================
+
+        // Create a KvK event
+        Task AddKvKEventAsync(KvKEvent kvk);
+
+        // Retrieve all KvK events
+        Task<List<KvKEvent>> GetAllKvKEventsAsync();
+
+        // Update an existing KvK event
+        Task UpdateKvKEventAsync(KvKEvent kvk);
+
+        // Get the currently active KvK (IsActive == true)
+        Task<KvKEvent?> GetActiveKvKAsync();
+
+
+        // ==========================================================================
+        // KVK TIMED EVENTS (Killing Fields / Gate Openings)
+        // ==========================================================================
+
+        // Add a timed KvK event (killing field / gate opening)
+        Task AddKvKTimedEventAsync(KvKTimedEvent evt);
+
+        // Retrieve all timed events for a KvK
+        Task<List<KvKTimedEvent>> GetTimedEventsForKvKAsync(string kvkId);
+
+        // Retrieve all timed events (used by scheduler)
+        Task<List<KvKTimedEvent>> GetAllKvKTimedEventsAsync();
+
+        // Update a timed event (e.g. AnnouncementSent)
+        Task UpdateKvKTimedEventAsync(KvKTimedEvent evt);
+
+
+        // ======================================================
+        // RAID EVENTS
+        // ======================================================
+
+        Task CreateRaidAsync(Raid raid);
+
+        Task<Raid?> GetRaidByMessageIdAsync(ulong messageId);
+
+        // ======================================================
+        // RAID SIGNUPS
+        // ======================================================
+
+        Task UpsertRaidSignupAsync(RaidSignup signup);
+
+        Task<List<RaidSignup>> GetRaidSignupsAsync(string raidId);
 
 
 

@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Threading.Tasks;
 using TribeBot.Bot.Handlers;
+using TribeBot.Bot.Hosting;
 using TribeBot.Bot.Services;
 using TribeBot.Core.Flows;
 using TribeBot.Core.Flows.Interfaces;
@@ -12,6 +13,7 @@ using TribeBot.Core.Interfaces;
 using TribeBot.Data.GoogleSheets;
 using TribeBot.Data.Interfaces;
 using TribeBot.Services;
+using System.Threading;
 using TribeBot.Services.Services;
 
 namespace TribeBot.Bot
@@ -106,12 +108,16 @@ namespace TribeBot.Bot
             services.AddSingleton<IFarmTribeService, FarmTribeService>();
             services.AddSingleton<IFarmService, FarmService>();
             services.AddSingleton<IFarmTribeAssignmentService, FarmTribeAssignmentService>();
-
+            services.AddSingleton<IKvKScheduleService, KvKScheduleService>();
+            services.AddSingleton<IKvKService, KvKService>();
+            services.AddSingleton<IRaidService, RaidService>();
 
             services.AddSingleton<InteractionService>(provider =>
                 new InteractionService(provider.GetRequiredService<DiscordSocketClient>()));
 
             services.AddSingleton<SchedulerService>();
+
+            services.AddSingleton<KvKAnnouncementWorker>();
 
             // ❌ DO NOT REGISTER INTERACTION MODULES HERE
             // These lines broke your modals:
@@ -182,6 +188,13 @@ namespace TribeBot.Bot
 
 
                 _services.GetRequiredService<SchedulerService>().Start();
+
+
+                // Start the KvK Announcer
+
+                _ = Task.Run(() =>
+                    _services.GetRequiredService<KvKAnnouncementWorker>()
+                        .StartAsync(CancellationToken.None));
 
                 Console.WriteLine("[Init] Bot Ready.");
             }

@@ -170,5 +170,20 @@ namespace TribeBot.Bot.UI
                 "• Unassigned players may still register farms")
             .WithColor(Color.DarkGreen)
             .Build();
+
+        // RAID SIGNUPS
+        public static Embed Raids() => new EmbedBuilder()
+            .WithTitle("⚔️ Raid Signup Commands")
+            .AddField("Officers",
+                "`/raid create` — Create a raid signup using a modal\n" +
+                "`/raid delete <raidId>` — Delete a raid signup\n" +
+                "`/raid list` — List active raids")
+            .AddField("Players",
+                "Use buttons on raid posts to respond:\n" +
+                "• ✅ Yes\n" +
+                "• ❌ No\n" +
+                "• ❔ Maybe")
+            .WithColor(Color.DarkRed)
+            .Build();
     }
 }

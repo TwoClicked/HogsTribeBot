@@ -13,18 +13,22 @@ namespace TribeBot.Bot.Handlers
         // UPDATED ORDER — now includes titles, sworn, events
         private readonly string[] Order =
         {
-            "general",
-            "registration",
-            "update",
-            "reign",
-            "bank",
-            "fines",
-            "polls",
-            "creator",
-            "titles",
-            "sworn",
-            "events"
+         "general",
+         "registration",
+         "update",
+         "reign",
+         "bank",
+         "fines",
+         "polls",
+         "creator",
+         "titles",
+         "sworn",
+         "events",
+         "raids",
+         "announcer"
         };
+
+
 
         public HelpHandler(DiscordSocketClient client)
         {
@@ -101,9 +105,9 @@ namespace TribeBot.Bot.Handlers
                 "titles" => HelpEmbeds.Titles(),
                 "sworn" => HelpEmbeds.Sworn(),
                 "events" => HelpEmbeds.Events(),
+                "raids" => HelpEmbeds.Raids(),
                 "farms" => HelpEmbeds.Farms(),
                 "farmtribes" => HelpEmbeds.FarmTribes(),
-
                 _ => HelpEmbeds.General()
             };
 
