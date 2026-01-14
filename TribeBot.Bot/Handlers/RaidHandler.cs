@@ -98,7 +98,9 @@ namespace TribeBot.Bot.Handlers
                 .WithButton("YES", RaidButtonIds.Yes, ButtonStyle.Success)
                 .WithButton("MAYBE", RaidButtonIds.Maybe, ButtonStyle.Secondary)
                 .WithButton("NO", RaidButtonIds.No, ButtonStyle.Danger)
+                .WithButton("Show Roster", RaidButtonIds.ShowRoster, ButtonStyle.Primary)
                 .Build();
+
 
             // ======================================================
             // Send message FIRST (we need messageId)
@@ -204,11 +206,15 @@ namespace TribeBot.Bot.Handlers
             await message.ModifyAsync(msg =>
             {
                 msg.Embed = updatedEmbed;
+                msg.Components = RaidEmbedBuilder.BuildRaidComponents();
             });
+
 
             await FollowupAsync(
                 embed: EmbedHelper.Success($"You are marked as **{response}**."),
                 ephemeral: true);
+
+
         }
     }
 }

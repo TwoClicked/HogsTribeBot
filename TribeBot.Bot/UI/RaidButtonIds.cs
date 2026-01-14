@@ -11,6 +11,8 @@ namespace TribeBot.Bot.UI
         public const string Yes = "raid_yes";
         public const string No = "raid_no";
         public const string Maybe = "raid_maybe";
+
+        public const string ShowRoster = "raid_show_roster";
     }
 
 }

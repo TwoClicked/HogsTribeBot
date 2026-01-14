@@ -10,6 +10,8 @@ namespace TribeBot.Bot.UI
 {
     public static class RaidEmbedBuilder
     {
+        private const int MaxFieldLength = 900;
+
         // ======================================================
         // INITIAL EMBED (no signups yet)
         // ======================================================
@@ -44,11 +46,6 @@ namespace TribeBot.Bot.UI
             Raid raid,
             RaidSignupSummary summary)
         {
-            string FormatUsers(IEnumerable<ulong> userIds)
-                => userIds.Any()
-                    ? string.Join("\n", userIds.Select(id => $"• <@{id}>"))
-                    : "_No signups yet_";
-
             int yesCount = summary.Yes.Count();
             int noCount = summary.No.Count();
             int maybeCount = summary.Maybe.Count();
@@ -69,6 +66,50 @@ namespace TribeBot.Bot.UI
                 .WithFooter("Click a button below to update your response")
                 .WithTimestamp(DateTimeOffset.UtcNow)
                 .Build();
+        }
+
+        public static MessageComponent BuildRaidComponents()
+        {
+            return new ComponentBuilder()
+                .WithButton("YES", RaidButtonIds.Yes, ButtonStyle.Success)
+                .WithButton("MAYBE", RaidButtonIds.Maybe, ButtonStyle.Secondary)
+                .WithButton("NO", RaidButtonIds.No, ButtonStyle.Danger)
+                .WithButton("Show Roster", RaidButtonIds.ShowRoster, ButtonStyle.Primary)
+                .Build();
+        }
+
+
+        // ======================================================
+        // HELPERS
+        // ======================================================
+        private static string FormatUsers(IEnumerable<ulong> userIds)
+        {
+            if (!userIds.Any())
+                return "_No signups yet_";
+
+            var lines = new List<string>();
+            int length = 0;
+            int shown = 0;
+            int total = userIds.Count();
+
+            foreach (var id in userIds)
+            {
+                var line = $"• <@{id}>";
+
+                if (length + line.Length + 1 > MaxFieldLength)
+                    break;
+
+                lines.Add(line);
+                length += line.Length + 1;
+                shown++;
+            }
+
+            int remaining = total - shown;
+
+            if (remaining > 0)
+                lines.Add($"_…and {remaining} more_");
+
+            return string.Join("\n", lines);
         }
 
         private static long ToUnix(DateTime utc)
