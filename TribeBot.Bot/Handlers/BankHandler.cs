@@ -140,6 +140,7 @@ namespace TribeBot.Bot.Handlers
             var guild = _client.GetGuild(GuildId);
 
             int fined = 0;
+            List<string> finedMembers = new();
             List<string> fineFailures = new();
             List<string> dmFailures = new();
 
@@ -154,6 +155,7 @@ namespace TribeBot.Bot.Handlers
                         "Missed weekly bank donation"))
                     {
                         fined++;
+                        finedMembers.Add($"{member.IngameName} ({member.DiscordUserId})");
                     }
                 }
                 catch
@@ -173,6 +175,7 @@ namespace TribeBot.Bot.Handlers
                             var dm = await user.CreateDMChannelAsync();
                             await dm.SendMessageAsync(
                                 $"💸 **Automatic Bank Fine Issued**\n\n" +
+                                $"Remember Bank fine gets issued to everyone paying later then 18UTC on **SUNDAY**\n" +
                                 $"You did not pay your weekly bank donation.\n" +
                                 $"Fine Amount: **{BankFineAmount:N0}**\n\n" +
                                 $"Please pay in <#{FinePaymentChannelId}>.\n" +
@@ -191,6 +194,7 @@ namespace TribeBot.Bot.Handlers
                 }
             }
 
+
             var fields = new Dictionary<string, string>
             {
                 { "Mode", "AUTO (Sunday 18:00 UTC)" },
@@ -198,6 +202,11 @@ namespace TribeBot.Bot.Handlers
                 { "Fines Issued", fined.ToString() },
                 { "Amount", BankFineAmount.ToString("N0") }
             };
+
+            if (finedMembers.Any())
+            {
+                fields["Fined Members"] = string.Join("\n", finedMembers);
+            }
 
             if (fineFailures.Any())
                 fields["Fine Failures"] = string.Join("\n", fineFailures);
