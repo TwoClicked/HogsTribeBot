@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Linq;
 using TribeBot.Core.DTOS;
 using TribeBot.Core.Entities;
-using TribeBot.Core.Enums;
 
 namespace TribeBot.Bot.UI
 {
@@ -17,19 +16,16 @@ namespace TribeBot.Bot.UI
         // ======================================================
         public static Embed BuildInitial(
             string kvkId,
-            RaidType raidType,
+            string raidType,
             DateTime startUtc)
         {
-            var title = raidType == RaidType.Gate
-                ? "🚪 Gate Raid Signup"
-                : "⚔️ Killing Field Raid Signup";
+            var title = $"⚔️ {raidType} Raid Signup";
 
             return new EmbedBuilder()
                 .WithTitle(title)
-                .WithColor(raidType == RaidType.Gate ? Color.Gold : Color.Red)
+                .WithColor(GetRaidColor(raidType))
                 .WithDescription(
-                    $"**KvK ID:** `{kvkId}`\n" +
-                    $"**Start Time:** <t:{ToUnix(startUtc)}:F> UTC\n" +
+                    $"**Start Time:** <t:{ToUnix(startUtc)}:F>\n" +
                     $"**Time Remaining:** <t:{ToUnix(startUtc)}:R>")
                 .AddField("✅ YES", "_No signups yet_", true)
                 .AddField("❔ MAYBE", "_No signups yet_", true)
@@ -50,13 +46,11 @@ namespace TribeBot.Bot.UI
             int noCount = summary.No.Count();
             int maybeCount = summary.Maybe.Count();
 
-            var title = raid.RaidType == RaidType.Gate
-                ? "🚪 Gate Raid Signup"
-                : "⚔️ Killing Field Raid Signup";
+            var title = $"⚔️ {raid.RaidType} Raid Signup";
 
             return new EmbedBuilder()
                 .WithTitle(title)
-                .WithColor(raid.RaidType == RaidType.Gate ? Color.Gold : Color.Red)
+                .WithColor(GetRaidColor(raid.RaidType))
                 .WithDescription(
                     $"**Start Time:** <t:{ToUnix(raid.StartUtc)}:F>\n" +
                     $"**Time Remaining:** <t:{ToUnix(raid.StartUtc)}:R>")
@@ -78,10 +72,20 @@ namespace TribeBot.Bot.UI
                 .Build();
         }
 
-
         // ======================================================
         // HELPERS
         // ======================================================
+        private static Color GetRaidColor(string raidType)
+        {
+            return raidType.ToLowerInvariant() switch
+            {
+                "gate" => Color.Gold,
+                "killing field" => Color.Red,
+                "killingfield" => Color.Red,
+                _ => Color.DarkGrey
+            };
+        }
+
         private static string FormatUsers(IEnumerable<ulong> userIds)
         {
             if (!userIds.Any())

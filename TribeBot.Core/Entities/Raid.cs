@@ -11,7 +11,7 @@ namespace TribeBot.Core.Entities
     {
         public string RaidId { get; set; } = Guid.NewGuid().ToString("N");
 
-        public RaidType RaidType { get; set; }
+        public string RaidType { get; set; } = default!; // "Gate", "Killing Field", etc.
 
         public DateTime StartUtc { get; set; }
 
@@ -21,4 +21,6 @@ namespace TribeBot.Core.Entities
 
         public bool IsClosed { get; set; }
     }
+
+
 }

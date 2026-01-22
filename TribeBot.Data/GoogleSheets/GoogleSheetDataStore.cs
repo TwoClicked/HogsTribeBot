@@ -1774,14 +1774,14 @@ namespace TribeBot.Data.GoogleSheets
         public async Task CreateRaidAsync(Raid raid)
         {
             var values = new List<object>
-            {
-                raid.RaidId,
-                raid.RaidType.ToString(),
-                raid.StartUtc.ToString("o"),
-                raid.ChannelId.ToString(),
-                raid.MessageId.ToString(),
-                raid.IsClosed.ToString().ToLower()
-            };
+    {
+        raid.RaidId,
+        raid.RaidType,                   
+        raid.StartUtc.ToString("o"),
+        raid.ChannelId.ToString(),
+        raid.MessageId.ToString(),
+        raid.IsClosed.ToString().ToLower()
+    };
 
             var request = _sheetsService.Spreadsheets.Values.Append(
                 new ValueRange
@@ -1796,8 +1796,8 @@ namespace TribeBot.Data.GoogleSheets
                 SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.RAW;
 
             await request.ExecuteAsync();
-
         }
+
 
         public async Task<Raid?> GetRaidByMessageIdAsync(ulong messageId)
         {
@@ -1905,7 +1905,7 @@ namespace TribeBot.Data.GoogleSheets
             return rows.Select(r => new Raid
             {
                 RaidId = r[0].ToString()!,
-                RaidType = Enum.Parse<RaidType>(r[1].ToString()!),
+                RaidType = r[1].ToString()!,
                 StartUtc = DateTime.Parse(r[2].ToString()!).ToUniversalTime(),
                 ChannelId = ulong.Parse(r[3].ToString()!, CultureInfo.InvariantCulture),
                 MessageId = ulong.Parse(r[4].ToString()!, CultureInfo.InvariantCulture),

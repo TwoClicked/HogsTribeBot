@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using TribeBot.Core.DTOS;
 using TribeBot.Core.Entities;
@@ -12,7 +9,7 @@ namespace TribeBot.Core.Interfaces
     public interface IRaidService
     {
         Task<Raid> CreateRaidAsync(
-            RaidType raidType,
+            string raidType,
             DateTime startUtc,
             ulong channelId,
             ulong messageId);
@@ -26,5 +23,4 @@ namespace TribeBot.Core.Interfaces
 
         Task<RaidSignupSummary> GetSignupSummaryAsync(string raidId);
     }
-
 }

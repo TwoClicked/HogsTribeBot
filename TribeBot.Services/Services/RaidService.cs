@@ -1,7 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using TribeBot.Core.DTOS;
 using TribeBot.Core.Entities;
@@ -24,7 +22,7 @@ namespace TribeBot.Services.Services
         // CREATE RAID
         // ======================================================
         public async Task<Raid> CreateRaidAsync(
-            RaidType raidType,
+            string raidType,
             DateTime startUtc,
             ulong channelId,
             ulong messageId)
@@ -35,7 +33,7 @@ namespace TribeBot.Services.Services
             var raid = new Raid
             {
                 RaidId = Guid.NewGuid().ToString("N"),
-                RaidType = raidType,
+                RaidType = raidType.Trim(),
                 StartUtc = startUtc,
                 ChannelId = channelId,
                 MessageId = messageId,
@@ -97,5 +95,4 @@ namespace TribeBot.Services.Services
             };
         }
     }
-
 }

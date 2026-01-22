@@ -140,16 +140,15 @@ namespace TribeBot.Bot.Handlers
 
         // HELPER 
 
+
         private static IEnumerable<string> BuildFullRosterMessages(
-              Raid raid,
-              RaidSignupSummary summary)
+            Raid raid,
+            RaidSignupSummary summary)
         {
             var lines = new List<string>
-               {
-                   raid.RaidType == RaidType.Gate
-                       ? "**🚪 Gate Raid Roster**"
-                       : "**⚔️ Killing Field Raid Roster**"
-               };
+            {
+                $"**⚔️ {raid.RaidType} Raid Roster**"
+            };
 
             void AddSection(string title, IEnumerable<ulong> users)
             {
@@ -185,7 +184,6 @@ namespace TribeBot.Bot.Handlers
             if (!string.IsNullOrWhiteSpace(chunk))
                 yield return chunk;
         }
-
-
     }
 }
+
