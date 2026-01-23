@@ -21,6 +21,7 @@ namespace TribeBot.Bot.Handlers
         private const ulong ReignOfficerRoleId = 1364209274322157639;
         private const ulong VrSubmissionChannelId = 1429640756104265829;
         private const ulong OfficerLogChannelId = 1440211043820507217;
+        private const ulong ReignParticipantRoleId = 1326014354331664435; // Top 20 reign role
 
         public ReignHandler(
             DiscordSocketClient client,
@@ -127,7 +128,7 @@ namespace TribeBot.Bot.Handlers
             }
 
             await message.Channel.SendMessageAsync(embed:
-                EmbedHelper.Success($"👋 {message.Author.Username}, you have left the current reign."));
+                EmbedHelper.Success($"{message.Author.Username}, you have left the current reign."));
 
             await Log("Reign Update — Self Removal", message.Author.Username, "Left the reign");
         }
@@ -157,7 +158,7 @@ namespace TribeBot.Bot.Handlers
             }
 
             await message.Channel.SendMessageAsync(embed:
-                EmbedHelper.Success($"🗑 {target.Username} has been removed from the reign."));
+                EmbedHelper.Success($"{target.Username} has been removed from the reign."));
 
             await Log("Reign Update — Officer Removal", target.Username, $"Removed by {message.Author.Username}");
         }
@@ -224,7 +225,7 @@ namespace TribeBot.Bot.Handlers
             int pos = 1;
             string msg = "";
 
-            foreach (var (member, reg) in results)
+            foreach (var (member, _) in results)
             {
                 msg += $"**{pos})** {member.IngameName} — {member.ReignPoints} pts\n";
                 pos++;
@@ -239,11 +240,38 @@ namespace TribeBot.Bot.Handlers
         // ======================================================================
         private async Task ClearReign(SocketMessage message)
         {
-            if (!await IsOfficer(message)) return;
+            if (!await IsOfficer(message))
+                return;
+
+            // GUARD — nothing to clear
+            if (!await _reignService.GetReignLockedAsync())
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("There is no active reign to clear."));
+                return;
+            }
+
+            if (message.Channel is not SocketGuildChannel sg)
+                return;
+
+            var guild = sg.Guild;
+            var role = guild.GetRole(ReignParticipantRoleId);
+
+            if (role != null)
+            {
+                foreach (var user in role.Members)
+                {
+                    await user.RemoveRoleAsync(role);
+                }
+            }
 
             await _reignService.ClearAsync();
+            await _reignService.SetReignLockedAsync(false);
+
             await message.Channel.SendMessageAsync(embed:
-                EmbedHelper.Success("Reign list cleared."));
+                EmbedHelper.Success("Reign cleared and roles removed."));
+
+            await Log("Reign Cleared", message.Author.Username, "Roles removed and list reset");
         }
 
         // ======================================================================
@@ -251,13 +279,56 @@ namespace TribeBot.Bot.Handlers
         // ======================================================================
         private async Task LockReign(SocketMessage message)
         {
-            if (!await IsOfficer(message)) return;
+            if (!await IsOfficer(message))
+                return;
+
+            // GUARD — already locked
+            if (await _reignService.GetReignLockedAsync())
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("The reign is already locked."));
+                return;
+            }
 
             await _reignService.SetReignLockedAsync(true);
             await _fineService.ReduceReignStrikesAsync();
 
+            var topReign = (await _reignService.GetCurrentRegistrationsSortedAsync())
+                .Take(20)
+                .ToList();
+
+            if (message.Channel is not SocketGuildChannel sg)
+                return;
+
+            var guild = sg.Guild;
+            var role = guild.GetRole(ReignParticipantRoleId);
+
+            if (role == null)
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Reign role not found."));
+                return;
+            }
+
+            foreach (var (member, _) in topReign)
+            {
+                if (!ulong.TryParse(member.DiscordUserId, out var userId))
+                    continue;
+
+                var guildUser = guild.GetUser(userId);
+                if (guildUser == null)
+                    continue;
+
+                if (!guildUser.Roles.Any(r => r.Id == role.Id))
+                {
+                    await guildUser.AddRoleAsync(role);
+                }
+            }
+
             await message.Channel.SendMessageAsync(embed:
-                EmbedHelper.Warning("The reign is now **LOCKED**."));
+                EmbedHelper.Warning("The reign is now **LOCKED**. Top 20 have received the role."));
+
+            await Log("Reign Locked", message.Author.Username, "Top 20 roles assigned");
         }
 
         // ======================================================================
@@ -265,7 +336,15 @@ namespace TribeBot.Bot.Handlers
         // ======================================================================
         private async Task UnlockReign(SocketMessage message)
         {
-            if (!await IsOfficer(message)) return;
+            if (!await IsOfficer(message))
+                return;
+
+            if (!await _reignService.GetReignLockedAsync())
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("The reign is already unlocked."));
+                return;
+            }
 
             await _reignService.SetReignLockedAsync(false);
 
@@ -278,7 +357,8 @@ namespace TribeBot.Bot.Handlers
         // ======================================================================
         private async Task SetExempt(SocketMessage message, bool exempt)
         {
-            if (!await IsOfficer(message)) return;
+            if (!await IsOfficer(message))
+                return;
 
             if (message.MentionedUsers.Count == 0)
             {
