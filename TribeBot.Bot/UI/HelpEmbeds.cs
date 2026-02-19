@@ -44,6 +44,7 @@ namespace TribeBot.Bot.UI
                 "`!leavereign` — Leave the current reign list")
             .AddField("Officer Only",
                 "`!clearreign`\n" +
+                "`!setreignpoints`\n" +
                 "`!lockreign`\n" +
                 "`!unlockreign`\n" +
                 "`!exempt`\n" +

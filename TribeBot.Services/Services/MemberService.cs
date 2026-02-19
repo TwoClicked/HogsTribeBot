@@ -37,5 +37,20 @@ namespace TribeBot.Services.Services
             member.LastUpdatedUTC = DateTime.UtcNow;
             return _dataStore.SaveMemberAsync(member);
         }
+
+        public async Task<bool> SetReignPointsAsync(string discordUserId, long reignPoints)
+        {
+            var members = await _dataStore.GetAllMembersAsync();
+            var member = members.FirstOrDefault(m => m.DiscordUserId == discordUserId);
+
+            if (member == null)
+                return false;
+
+            member.ReignPoints = reignPoints;
+
+            await _dataStore.SaveMemberAsync(member);
+            return true;
+        }
+
     }
 }

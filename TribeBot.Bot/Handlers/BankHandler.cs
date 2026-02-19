@@ -494,6 +494,33 @@ namespace TribeBot.Bot.Handlers
             DateTime weekStart = now.Date.AddDays(-daysSinceMonday);
             DateTime weekEnd = weekStart.AddDays(7);
 
+            var detectedDate = _ocrService.LastDetectedDonationDateUtc;
+
+            if (detectedDate != null)
+            {
+                if (detectedDate < weekStart || detectedDate >= weekEnd)
+                {
+                    await OfficerLog.SendMessageAsync(embed:
+                        EmbedHelper.Warning(
+                            $"⚠️ **Donation Outside Current Week**\n\n" +
+                            $"Member: **{targetMember.IngameName}**\n" +
+                            $"Detected Date: {detectedDate:yyyy-MM-dd}\n" +
+                            $"Week Range: {weekStart:yyyy-MM-dd} → {weekEnd:yyyy-MM-dd}"
+                        ));
+                }
+            }
+            else
+            {
+                await OfficerLog.SendMessageAsync(embed:
+                    EmbedHelper.Warning(
+                        $"⚠️ **Donation Without Detectable Date**\n\n" +
+                        $"Member: **{targetMember.IngameName}**\n" +
+                        "OCR could not detect a transaction date."
+                    ));
+            }
+
+
+
             await _donationService.AddDonationAsync(new DonationRecord
             {
                 DiscordUserId = targetMember.DiscordUserId,

@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-
 namespace TribeBot.Services.Services
 {
     public class PaddleOcrServerService
@@ -13,6 +12,8 @@ namespace TribeBot.Services.Services
         private readonly string _serverHost = "127.0.0.1";
         private readonly int _serverPort = 23333;
         private Process? _server;
+
+        public DateTime? LastDetectedDonationDateUtc { get; private set; }
 
         public PaddleOcrServerService(string exePath)
         {
@@ -28,12 +29,6 @@ namespace TribeBot.Services.Services
             try
             {
                 string workDir = Path.GetDirectoryName(_exePath)!;
-                Console.WriteLine("==============================================");
-                Console.WriteLine("🚀 STARTING PADDLE OCR SERVER");
-                Console.WriteLine($"📁 exe:      {_exePath}");
-                Console.WriteLine($"📁 work dir: {workDir}");
-                Console.WriteLine($"📁 exists:   {File.Exists(_exePath)}");
-                Console.WriteLine("==============================================");
 
                 var psi = new ProcessStartInfo
                 {
@@ -45,10 +40,6 @@ namespace TribeBot.Services.Services
                 };
 
                 _server = Process.Start(psi);
-
-                Console.WriteLine("🚀 PaddleOCR-json server started");
-                Console.WriteLine("🔌 Listening at 127.0.0.1:23333");
-                Console.WriteLine("==============================================");
             }
             catch (Exception ex)
             {
@@ -64,25 +55,12 @@ namespace TribeBot.Services.Services
         {
             try
             {
-                Console.WriteLine("==============================================");
-                Console.WriteLine("🚀 OCR REQUEST");
-                Console.WriteLine($"🖼 Image: {imagePath}");
-                Console.WriteLine($"📁 Exists: {File.Exists(imagePath)}");
-                Console.WriteLine("==============================================");
-
                 if (!File.Exists(imagePath))
-                {
-                    Console.WriteLine("❌ ERROR: File does not exist.");
                     return null;
-                }
 
-                // JSON request for OCR
                 string requestJson =
                     $"{{\"image_path\":\"{imagePath.Replace("\\", "\\\\")}\"}}";
 
-                // -------------------------------------------------------
-                // SEND JSON TO OCR SERVER
-                // -------------------------------------------------------
                 using var client = new TcpClient();
                 client.Connect(_serverHost, _serverPort);
 
@@ -90,40 +68,24 @@ namespace TribeBot.Services.Services
                 using var writer = new StreamWriter(stream, Encoding.UTF8);
                 using var reader = new StreamReader(stream, Encoding.UTF8);
 
-                Console.WriteLine("📨 Sending to OCR server:");
-                Console.WriteLine(requestJson);
-
                 await writer.WriteLineAsync(requestJson);
                 await writer.FlushAsync();
 
                 string? response = await reader.ReadLineAsync();
 
-                Console.WriteLine("📥 RAW OCR RESPONSE:");
-                Console.WriteLine(response);
-
                 if (string.IsNullOrWhiteSpace(response))
-                {
-                    Console.WriteLine("❌ EMPTY OCR RESPONSE.");
                     return null;
-                }
 
-                // -------------------------------------------------------
-                // PARSE JSON
-                // -------------------------------------------------------
                 JsonDocument doc = JsonDocument.Parse(response);
                 var root = doc.RootElement;
 
                 if (!root.TryGetProperty("data", out var dataArray))
-                {
-                    Console.WriteLine("❌ NO 'data' array found");
                     return null;
-                }
-
-                Console.WriteLine("==============================================");
-                Console.WriteLine("🔍 ANALYZING OCR TEXT BLOCKS");
-                Console.WriteLine("==============================================");
 
                 int total = 0;
+
+                // ✅ Declare OUTSIDE loop
+                DateTime? detectedDateUtc = null;
 
                 foreach (var block in dataArray.EnumerateArray())
                 {
@@ -132,9 +94,6 @@ namespace TribeBot.Services.Services
 
                     string text = textProp.GetString() ?? "";
 
-                    // -------------------------------------------------------
-                    // NORMALIZE OCR NOISE
-                    // -------------------------------------------------------
                     string norm = text
                         .Replace('М', 'M')
                         .Replace('м', 'm')
@@ -156,35 +115,69 @@ namespace TribeBot.Services.Services
                         .Replace("\u202B", "")
                         .Replace("\u202C", "");
 
-                    Console.WriteLine($"📝 RAW:  '{text}'");
-                    Console.WriteLine($"🔧 NORM: '{norm}'");
+                    // -------------------------------------------------------
+                    // DATE DETECTION (only once)
+                    // -------------------------------------------------------
 
-                    // -------------------------------------------------------
-                    // DEBUG CHARACTER CODES
-                    // -------------------------------------------------------
-                    Console.Write("🔎 CHAR CODES: ");
-                    foreach (char c in norm)
-                        Console.Write($"{c}({(int)c}) ");
-                    Console.WriteLine();
+
+                    if (detectedDateUtc == null)
+                    {
+                        // yyyy.MM.dd
+                        var fullDateMatch = Regex.Match(
+                            norm,
+                            @"(\d{4})[.](\d{1,2})[.](\d{1,2})");
+
+                        if (fullDateMatch.Success)
+                        {
+                            int year = int.Parse(fullDateMatch.Groups[1].Value);
+                            int month = int.Parse(fullDateMatch.Groups[2].Value);
+                            int day = int.Parse(fullDateMatch.Groups[3].Value);
+
+                            if (DateTime.TryParse($"{year}-{month}-{day}",
+                                out DateTime parsed))
+                            {
+                                detectedDateUtc = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+                            }
+                        }
+                        else
+                        {
+                            // MM.dd
+                            var shortDateMatch = Regex.Match(
+                                norm,
+                                @"(\d{1,2})[.](\d{1,2})");
+
+                            if (shortDateMatch.Success)
+                            {
+                                int month = int.Parse(shortDateMatch.Groups[1].Value);
+                                int day = int.Parse(shortDateMatch.Groups[2].Value);
+
+                                int year = DateTime.UtcNow.Year;
+
+                                if (DateTime.TryParse($"{year}-{month}-{day}",
+                                    out DateTime parsed))
+                                {
+                                    detectedDateUtc = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+                                }
+                            }
+                        }
+                    }
+
+
 
                     // -------------------------------------------------------
                     // FIND DONATION VALUES
                     // -------------------------------------------------------
                     var matches = Regex.Matches(
-                        norm,
-                        @"(\d+[.,]\d+|\d+)\s*[Mm]",
-                        RegexOptions.IgnoreCase);
+                norm,
+                @"(\d+[.,]\d+|\d+)\s*[Mm]",
+                RegexOptions.IgnoreCase);
 
                     if (matches.Count == 0)
-                    {
-                        Console.WriteLine("❌ NO MATCHES");
                         continue;
-                    }
 
                     foreach (Match match in matches)
                     {
                         string num = match.Groups[1].Value.Replace(",", ".");
-                        Console.WriteLine($"✔ MATCHED: '{num}'");
 
                         if (double.TryParse(
                             num,
@@ -192,36 +185,34 @@ namespace TribeBot.Services.Services
                             System.Globalization.CultureInfo.InvariantCulture,
                             out double millions))
                         {
-                            if (millions >= 0.1 && millions <= 10.0)
+                            if (millions >= 0.1 && millions <= 15.0)
                             {
                                 int amount = (int)(millions * 1_000_000);
-                                Console.WriteLine($"➕ ADD {amount:N0}");
                                 total += amount;
                             }
-                            else
-                            {
-                                Console.WriteLine($"⚠ IGNORE (out of VR range): {millions}");
-                            }
-                        }
-                        else
-                        {
-                            Console.WriteLine($"❌ CANNOT PARSE '{num}'");
                         }
                     }
                 }
 
-                Console.WriteLine("==============================================");
-                Console.WriteLine($"🎯 FINAL DONATION TOTAL: {total:N0}");
-                Console.WriteLine("==============================================");
+
+
+                // ✅ Store detected date for external validation
+                LastDetectedDonationDateUtc = detectedDateUtc;
+
+
+                Console.WriteLine("---- OCR RESULT ----");
+                Console.WriteLine($"Date: {detectedDateUtc}");
+                Console.WriteLine($"Total: {total}");
+                Console.WriteLine("--------------------");
 
                 return total > 0 ? total : null;
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine("💥 OCR ERROR:");
-                Console.WriteLine(ex);
                 return null;
             }
+
+
         }
     }
 }

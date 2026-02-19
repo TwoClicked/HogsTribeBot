@@ -12,5 +12,7 @@ namespace TribeBot.Core.Interfaces
         Task<Member?> GetMemberByDiscordIdAsync(string discordUserId);
         Task<List<Member>> GetAllMembersAsync();
         Task RegisterOrUpdateAsync(Member member);
+        Task<bool> SetReignPointsAsync(string discordUserId, long reignPoints);
+
     }
 }
