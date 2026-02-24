@@ -21,9 +21,6 @@ namespace TribeBot.Services.Services
             StartOcrServer();
         }
 
-        // -------------------------------------------------------
-        // START SERVER
-        // -------------------------------------------------------
         private void StartOcrServer()
         {
             try
@@ -40,6 +37,7 @@ namespace TribeBot.Services.Services
                 };
 
                 _server = Process.Start(psi);
+                Console.WriteLine("✅ OCR server started.");
             }
             catch (Exception ex)
             {
@@ -48,15 +46,20 @@ namespace TribeBot.Services.Services
             }
         }
 
-        // -------------------------------------------------------
-        // OCR REQUEST
-        // -------------------------------------------------------
         public async Task<int?> ExtractDonationAmountAsync(string imagePath)
         {
             try
             {
+                Console.WriteLine("=================================================");
+                Console.WriteLine("📸 OCR START");
+                Console.WriteLine($"Image: {imagePath}");
+                Console.WriteLine("=================================================");
+
                 if (!File.Exists(imagePath))
+                {
+                    Console.WriteLine("❌ Image file does not exist.");
                     return null;
+                }
 
                 string requestJson =
                     $"{{\"image_path\":\"{imagePath.Replace("\\", "\\\\")}\"}}";
@@ -74,18 +77,96 @@ namespace TribeBot.Services.Services
                 string? response = await reader.ReadLineAsync();
 
                 if (string.IsNullOrWhiteSpace(response))
+                {
+                    Console.WriteLine("❌ OCR returned empty response.");
                     return null;
+                }
 
                 JsonDocument doc = JsonDocument.Parse(response);
-                var root = doc.RootElement;
 
-                if (!root.TryGetProperty("data", out var dataArray))
+                if (!doc.RootElement.TryGetProperty("data", out var dataArray))
+                {
+                    Console.WriteLine("❌ OCR JSON missing 'data' property.");
                     return null;
+                }
+
+                // ==============================
+                // COMBINE OCR TEXT
+                // ==============================
+
+                var sb = new StringBuilder();
+
+                foreach (var block in dataArray.EnumerateArray())
+                {
+                    if (block.TryGetProperty("text", out var textProp))
+                    {
+                        sb.Append(" ").Append(textProp.GetString());
+                    }
+                }
+
+                string allText = sb.ToString()
+                    .Replace('：', ':')
+                    .Replace('／', '/')
+                    .Replace(';', ':');
+
+                Console.WriteLine("---- FULL OCR TEXT ----");
+                Console.WriteLine(allText);
+                Console.WriteLine("------------------------");
+
+                // ==============================
+                // DATE DETECTION (TRANSPORT ROWS ONLY)
+                // ==============================
+
+                DateTime? detectedDateUtc = null;
+
+                var transportMatches = Regex.Matches(
+                    allText,
+                    @"Tax\s*Rate:\s*\d+[.,]?\d*\s*%\s*(\d{2})/(\d{2})\s*(\d{2}):(\d{2}):(\d{2})",
+                    RegexOptions.IgnoreCase);
+
+                Console.WriteLine($"🔎 Found {transportMatches.Count} transport date matches.");
+
+                for (int i = 0; i < transportMatches.Count; i++)
+                {
+                    Console.WriteLine($"Match {i}: {transportMatches[i].Value}");
+                }
+
+                if (transportMatches.Count > 0)
+                {
+                    var match = transportMatches[0]; // top-most row
+
+                    int month = int.Parse(match.Groups[1].Value);
+                    int day = int.Parse(match.Groups[2].Value);
+                    int hour = int.Parse(match.Groups[3].Value);
+                    int minute = int.Parse(match.Groups[4].Value);
+                    int second = int.Parse(match.Groups[5].Value);
+
+                    Console.WriteLine("📅 Using first transport row date:");
+                    Console.WriteLine($"Month={month} Day={day} Time={hour}:{minute}:{second}");
+
+                    TryBuildDate(
+                        DateTime.UtcNow.Year,
+                        month,
+                        day,
+                        hour,
+                        minute,
+                        second,
+                        ref detectedDateUtc);
+                }
+                else
+                {
+                    Console.WriteLine("⚠ No transport row dates detected.");
+                }
+
+                LastDetectedDonationDateUtc = detectedDateUtc;
+
+                Console.WriteLine($"🕒 Final Parsed Date (UTC): {detectedDateUtc}");
+
+                // ==============================
+                // DONATION AMOUNT PARSING
+                // ==============================
 
                 int total = 0;
-
-                // ✅ Declare OUTSIDE loop
-                DateTime? detectedDateUtc = null;
 
                 foreach (var block in dataArray.EnumerateArray())
                 {
@@ -94,88 +175,12 @@ namespace TribeBot.Services.Services
 
                     string text = textProp.GetString() ?? "";
 
-                    string norm = text
-                        .Replace('М', 'M')
-                        .Replace('м', 'm')
-                        .Replace('О', '0')
-                        .Replace('о', 'o')
-                        .Replace('б', '6')
-                        .Replace('‚', ',')
-                        .Replace('¸', ',')
-                        .Replace('˛', ',')
-                        .Replace('٫', '.')
-                        .Replace('﹐', ',')
-                        .Replace('，', ',')
-                        .Replace('､', ',')
-                        .Replace('·', '.')
-                        .Replace('/', '.')
-                        .Replace("\u200E", "")
-                        .Replace("\u200F", "")
-                        .Replace("\u202A", "")
-                        .Replace("\u202B", "")
-                        .Replace("\u202C", "");
+                    var amountMatches = Regex.Matches(
+                        text,
+                        @"(\d+[.,]\d+|\d+)\s*[Mm]",
+                        RegexOptions.IgnoreCase);
 
-                    // -------------------------------------------------------
-                    // DATE DETECTION (only once)
-                    // -------------------------------------------------------
-
-
-                    if (detectedDateUtc == null)
-                    {
-                        // yyyy.MM.dd
-                        var fullDateMatch = Regex.Match(
-                            norm,
-                            @"(\d{4})[.](\d{1,2})[.](\d{1,2})");
-
-                        if (fullDateMatch.Success)
-                        {
-                            int year = int.Parse(fullDateMatch.Groups[1].Value);
-                            int month = int.Parse(fullDateMatch.Groups[2].Value);
-                            int day = int.Parse(fullDateMatch.Groups[3].Value);
-
-                            if (DateTime.TryParse($"{year}-{month}-{day}",
-                                out DateTime parsed))
-                            {
-                                detectedDateUtc = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
-                            }
-                        }
-                        else
-                        {
-                            // MM.dd
-                            var shortDateMatch = Regex.Match(
-                                norm,
-                                @"(\d{1,2})[.](\d{1,2})");
-
-                            if (shortDateMatch.Success)
-                            {
-                                int month = int.Parse(shortDateMatch.Groups[1].Value);
-                                int day = int.Parse(shortDateMatch.Groups[2].Value);
-
-                                int year = DateTime.UtcNow.Year;
-
-                                if (DateTime.TryParse($"{year}-{month}-{day}",
-                                    out DateTime parsed))
-                                {
-                                    detectedDateUtc = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
-                                }
-                            }
-                        }
-                    }
-
-
-
-                    // -------------------------------------------------------
-                    // FIND DONATION VALUES
-                    // -------------------------------------------------------
-                    var matches = Regex.Matches(
-                norm,
-                @"(\d+[.,]\d+|\d+)\s*[Mm]",
-                RegexOptions.IgnoreCase);
-
-                    if (matches.Count == 0)
-                        continue;
-
-                    foreach (Match match in matches)
+                    foreach (Match match in amountMatches)
                     {
                         string num = match.Groups[1].Value.Replace(",", ".");
 
@@ -187,32 +192,67 @@ namespace TribeBot.Services.Services
                         {
                             if (millions >= 0.1 && millions <= 15.0)
                             {
-                                int amount = (int)(millions * 1_000_000);
-                                total += amount;
+                                int value = (int)(millions * 1_000_000);
+                                total += value;
+
+                                Console.WriteLine($"💰 Detected donation: {millions}M -> {value}");
                             }
                         }
                     }
                 }
 
-
-
-                // ✅ Store detected date for external validation
-                LastDetectedDonationDateUtc = detectedDateUtc;
-
-
-                Console.WriteLine("---- OCR RESULT ----");
-                Console.WriteLine($"Date: {detectedDateUtc}");
+                Console.WriteLine("---- FINAL OCR RESULT ----");
+                Console.WriteLine($"Date UTC: {detectedDateUtc}");
                 Console.WriteLine($"Total: {total}");
-                Console.WriteLine("--------------------");
+                Console.WriteLine("---------------------------");
 
                 return total > 0 ? total : null;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine("💥 OCR ERROR:");
+                Console.WriteLine(ex);
                 return null;
             }
+        }
 
+        private void TryBuildDate(
+            int year,
+            int month,
+            int day,
+            int hour,
+            int minute,
+            int second,
+            ref DateTime? detectedDateUtc)
+        {
+            try
+            {
+                var parsed = new DateTime(
+                    year,
+                    month,
+                    day,
+                    hour,
+                    minute,
+                    second,
+                    DateTimeKind.Utc);
 
+                Console.WriteLine($"🧪 Built DateTime: {parsed}");
+
+                if (parsed <= DateTime.UtcNow.AddMinutes(5))
+                {
+                    detectedDateUtc = parsed;
+                    Console.WriteLine("✅ Date accepted.");
+                }
+                else
+                {
+                    Console.WriteLine("⚠ Date rejected (future > 5 min).");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("❌ Date build failed:");
+                Console.WriteLine(ex.Message);
+            }
         }
     }
 }

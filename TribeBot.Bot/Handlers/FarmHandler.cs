@@ -266,7 +266,7 @@ namespace TribeBot.Bot.Handlers
         }
 
         // ======================================================
-        // /farm track – Officer only
+        // /farm track – Officer only or Farmerbill role
         // ======================================================
         [SlashCommand("track", "Track a farm by ID and see who owns it")]
         public async Task TrackFarm(
