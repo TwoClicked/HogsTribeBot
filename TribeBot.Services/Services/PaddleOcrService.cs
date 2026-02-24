@@ -99,9 +99,7 @@ namespace TribeBot.Services.Services
                 foreach (var block in dataArray.EnumerateArray())
                 {
                     if (block.TryGetProperty("text", out var textProp))
-                    {
                         sb.Append(" ").Append(textProp.GetString());
-                    }
                 }
 
                 string allText = sb.ToString()
@@ -114,26 +112,24 @@ namespace TribeBot.Services.Services
                 Console.WriteLine("------------------------");
 
                 // ==============================
-                // DATE DETECTION (TRANSPORT ROWS ONLY)
+                // LANGUAGE-INDEPENDENT DATE DETECTION
+                // Matches: 8 % 02/15 18:54:30
                 // ==============================
 
                 DateTime? detectedDateUtc = null;
 
-                var transportMatches = Regex.Matches(
+                var dateMatches = Regex.Matches(
                     allText,
-                    @"Tax\s*Rate:\s*\d+[.,]?\d*\s*%\s*(\d{2})/(\d{2})\s*(\d{2}):(\d{2}):(\d{2})",
-                    RegexOptions.IgnoreCase);
+                    @"\d+[.,]?\d*\s*%\s*(\d{2})/(\d{2})\s*(\d{2}):(\d{2}):(\d{2})");
 
-                Console.WriteLine($"🔎 Found {transportMatches.Count} transport date matches.");
+                Console.WriteLine($"🔎 Found {dateMatches.Count} percent+date matches.");
 
-                for (int i = 0; i < transportMatches.Count; i++)
+                for (int i = 0; i < dateMatches.Count; i++)
+                    Console.WriteLine($"Match {i}: {dateMatches[i].Value}");
+
+                if (dateMatches.Count > 0)
                 {
-                    Console.WriteLine($"Match {i}: {transportMatches[i].Value}");
-                }
-
-                if (transportMatches.Count > 0)
-                {
-                    var match = transportMatches[0]; // top-most row
+                    var match = dateMatches[0]; // top row = newest
 
                     int month = int.Parse(match.Groups[1].Value);
                     int day = int.Parse(match.Groups[2].Value);
@@ -141,7 +137,7 @@ namespace TribeBot.Services.Services
                     int minute = int.Parse(match.Groups[4].Value);
                     int second = int.Parse(match.Groups[5].Value);
 
-                    Console.WriteLine("📅 Using first transport row date:");
+                    Console.WriteLine("📅 Using first detected row date:");
                     Console.WriteLine($"Month={month} Day={day} Time={hour}:{minute}:{second}");
 
                     TryBuildDate(
@@ -155,7 +151,7 @@ namespace TribeBot.Services.Services
                 }
                 else
                 {
-                    Console.WriteLine("⚠ No transport row dates detected.");
+                    Console.WriteLine("⚠ No transport dates detected.");
                 }
 
                 LastDetectedDonationDateUtc = detectedDateUtc;
@@ -190,7 +186,7 @@ namespace TribeBot.Services.Services
                             System.Globalization.CultureInfo.InvariantCulture,
                             out double millions))
                         {
-                            if (millions >= 0.1 && millions <= 15.0)
+                            if (millions >= 0.1 && millions <= 50.0)
                             {
                                 int value = (int)(millions * 1_000_000);
                                 total += value;
