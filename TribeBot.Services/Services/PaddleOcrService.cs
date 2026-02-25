@@ -90,9 +90,9 @@ namespace TribeBot.Services.Services
                     return null;
                 }
 
-                // ==============================
+                // ======================================================
                 // COMBINE OCR TEXT
-                // ==============================
+                // ======================================================
 
                 var sb = new StringBuilder();
 
@@ -107,20 +107,28 @@ namespace TribeBot.Services.Services
                     .Replace('／', '/')
                     .Replace(';', ':');
 
+                // Fix merged date/time (02.2513:30:55 -> 02.25 13:30:55)
+                allText = Regex.Replace(
+                    allText,
+                    @"(\d{2})[./,](\d{2})(\d{2}:\d{2}:\d{2})",
+                    "$1.$2 $3");
+
                 Console.WriteLine("---- FULL OCR TEXT ----");
                 Console.WriteLine(allText);
                 Console.WriteLine("------------------------");
 
-                // ==============================
-                // LANGUAGE-INDEPENDENT DATE DETECTION
-                // Matches: 8 % 02/15 18:54:30
-                // ==============================
+                // ======================================================
+                // DATE DETECTION (OCR TOLERANT)
+                // Requires number before % or x
+                // Accepts / . ,
+                // ======================================================
 
                 DateTime? detectedDateUtc = null;
 
                 var dateMatches = Regex.Matches(
                     allText,
-                    @"\d+[.,]?\d*\s*%\s*(\d{2})/(\d{2})\s*(\d{2}):(\d{2}):(\d{2})");
+                    @"\d+[.,]?\d*\s*(?:%|x)\s*(\d{2})[./,](\d{2})\s*(\d{2}):(\d{2}):(\d{2})",
+                    RegexOptions.IgnoreCase);
 
                 Console.WriteLine($"🔎 Found {dateMatches.Count} percent+date matches.");
 
@@ -129,7 +137,7 @@ namespace TribeBot.Services.Services
 
                 if (dateMatches.Count > 0)
                 {
-                    var match = dateMatches[0]; // top row = newest
+                    var match = dateMatches[0]; // newest row
 
                     int month = int.Parse(match.Groups[1].Value);
                     int day = int.Parse(match.Groups[2].Value);
@@ -158,9 +166,9 @@ namespace TribeBot.Services.Services
 
                 Console.WriteLine($"🕒 Final Parsed Date (UTC): {detectedDateUtc}");
 
-                // ==============================
+                // ======================================================
                 // DONATION AMOUNT PARSING
-                // ==============================
+                // =====================================================
 
                 int total = 0;
 
@@ -188,7 +196,9 @@ namespace TribeBot.Services.Services
                         {
                             if (millions >= 0.1 && millions <= 50.0)
                             {
-                                int value = (int)(millions * 1_000_000);
+                                int value = Convert.ToInt32(
+                                    Math.Round(millions * 1_000_000));
+
                                 total += value;
 
                                 Console.WriteLine($"💰 Detected donation: {millions}M -> {value}");
