@@ -45,6 +45,7 @@ namespace TribeBot.Bot.UI
             .AddField("Officer Only",
                 "`!clearreign`\n" +
                 "`!setreignpoints`\n" +
+                "`!SetReignPlayer`\n" +
                 "`!lockreign`\n" +
                 "`!unlockreign`\n" +
                 "`!exempt`\n" +

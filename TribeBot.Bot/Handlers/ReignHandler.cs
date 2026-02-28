@@ -103,6 +103,12 @@ namespace TribeBot.Bot.Handlers
                 return true;
             }
 
+            if (content.StartsWith("!setreignplayer", StringComparison.OrdinalIgnoreCase))
+            {
+                await SetReignPlayer(message);
+                return true;
+            }
+
             if (content.StartsWith("!setreignpoints", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleSetReignPoints(message);
@@ -110,6 +116,63 @@ namespace TribeBot.Bot.Handlers
             }
 
             return false;
+        }
+
+        // ======================================================================
+        // !setreignplayer
+        // ======================================================================
+        private async Task SetReignPlayer(SocketMessage message)
+        {
+            if (!await IsOfficer(message))
+                return;
+
+            if (message.MentionedUsers.Count == 0)
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Usage: `!setreignplayer @user`"));
+                return;
+            }
+
+            var target = message.MentionedUsers.First();
+
+            var member = await _memberService
+                .GetMemberByDiscordIdAsync(target.Id.ToString());
+
+            if (member == null)
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"{target.Username} is not registered."));
+                return;
+            }
+
+            if (await _reignService.GetReignLockedAsync())
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("Reign is currently locked."));
+                return;
+            }
+
+            // Check if already applied
+            var current = await _reignService
+                .GetCurrentRegistrationsSortedAsync();
+
+            if (current.Any(x => x.member.DiscordUserId == target.Id.ToString()))
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning($"{target.Username} is already in the reign."));
+                return;
+            }
+
+            await _reignService.ApplyAsync(target.Id.ToString());
+
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success(
+                    $"{target.Username} has been added to the Viking Reign 👑"));
+
+            await Log(
+                "Reign Update — Officer Addition",
+                target.Username,
+                $"Added by {message.Author.Username}");
         }
 
         // ======================================================================
