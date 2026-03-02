@@ -69,6 +69,7 @@ namespace TribeBot.Bot
             _client.Log += LogAsync;
             _client.MessageReceived += MessageReceivedAsync;
             _client.Ready += ReadyAsync;
+            _client.UserLeft += OnUserLeftAsync;
 
             string token = Environment.GetEnvironmentVariable("DISCORD_TOKEN");
             if (string.IsNullOrWhiteSpace(token))
@@ -82,6 +83,31 @@ namespace TribeBot.Bot
 
             Console.WriteLine("Bot launched successfully.");
             await Task.Delay(-1);
+        }
+
+        private async Task OnUserLeftAsync(SocketGuild guild, SocketUser user)
+        {
+            try
+            {
+                ulong leaveChannelId = 1440211043820507217; 
+
+                var channel = guild.GetTextChannel(leaveChannelId);
+                if (channel == null)
+                {
+                    Console.WriteLine("[UserLeft] Channel not found.");
+                    return;
+                }
+
+                await channel.SendMessageAsync(
+                    $"👋 **{user.Username}** has left the server."
+                );
+
+                Console.WriteLine($"[UserLeft] {user.Username} left {guild.Name}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[UserLeft Error] {ex}");
+            }
         }
 
         // =====================================================================
