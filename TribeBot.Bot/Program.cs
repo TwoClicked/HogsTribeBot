@@ -99,7 +99,7 @@ namespace TribeBot.Bot
                 }
 
                 await channel.SendMessageAsync(
-                    $"👋 **{user.Username}** has left the server."
+                    $"👋 **{user.GlobalName}** has left the server."
                 );
 
                 Console.WriteLine($"[UserLeft] {user.Username} left {guild.Name}");

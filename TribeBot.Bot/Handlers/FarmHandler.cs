@@ -70,24 +70,28 @@ namespace TribeBot.Bot.Handlers
             await RespondWithModalAsync(modal.Build());
         }
 
+
         // ======================================================
-        // /farm add(BULK ADD METHOD)
+        // /farm bulk
         // ======================================================
         [RequireRole(HogsRole)]
         [SlashCommand("bulk", "Register multiple farms at once")]
         public async Task BulkAddFarms()
         {
-
             var modal = new ModalBuilder()
-                .WithTitle("Register farms (Bulk)")
+                .WithTitle("Register Farms (Max 15 PER REQUEST)")
                 .WithCustomId("register_farm_bulk")
                 .AddTextInput(
-                label: "Farm list (One per line: Name | ID)",
-                customId: "farm_list",
-                style: TextInputStyle.Paragraph,
-                placeholder: @"FarmAlpha | 123456 
-                               FarmBravo | 654321",
-                required: true);
+                    label: "Farm list (One per line: Name | ID)",
+                    customId: "farm_list",
+                    style: TextInputStyle.Paragraph,
+                    placeholder:
+                    @"FarmAlpha | 123456
+                    FarmBravo | 654321
+                    FarmCharlie | 987654",
+                    required: true,
+                    maxLength: 2000
+                );
 
             await RespondWithModalAsync(modal.Build());
         }
@@ -568,13 +572,23 @@ namespace TribeBot.Bot.Handlers
 
             var user = (SocketGuildUser)Context.User;
 
-
-
             var lines = modal.FarmList
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Select(l => l.Trim())
                 .Where(l => !string.IsNullOrWhiteSpace(l))
                 .ToList();
+
+            // ✅ MAX 15 farms validation
+            if (lines.Count > 15)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error(
+                        $"❌ Bulk Farm Registration\n\nYou submitted **{lines.Count} farms**.\nMaximum **15 farms per bulk submission**.\nPlease split your farms into multiple submissions."
+                    ),
+                    ephemeral: true);
+
+                return;
+            }
 
             int successCount = 0;
             var failures = new List<string>();
@@ -582,6 +596,7 @@ namespace TribeBot.Bot.Handlers
             foreach (var line in lines)
             {
                 var parts = line.Split('|', StringSplitOptions.RemoveEmptyEntries);
+
                 if (parts.Length != 2)
                 {
                     failures.Add($"{line} — Invalid format (expected: Name | ID)");
@@ -612,54 +627,45 @@ namespace TribeBot.Bot.Handlers
                         user.Nickname ?? user.Username);
 
                     successCount++;
+
+                    // ✅ Prevent API rate limits
+                    await Task.Delay(250);
                 }
                 catch (Exception ex)
                 {
                     failures.Add($"{farmName} | {farmId} — {ex.Message}");
                 }
             }
+
             bool dmSent = false;
 
             if (failures.Count > 0)
             {
                 try
                 {
+                    var dm = await Context.User.CreateDMChannelAsync();
 
-                    if (failures.Count > 0)
+                    await dm.SendMessageAsync(
+                        "⚠️ **Bulk Farm Registration – Failed Entries**\n" +
+                        "Fix these and re-submit using `/farm add` or `/farm bulk`.\n"
+                    );
+
+                    var chunks = ChunkLines(
+                        failures.Select(f => $"• {f}")
+                    );
+
+                    foreach (var chunk in chunks)
                     {
-                        try
-                        {
-                            var dm = await Context.User.CreateDMChannelAsync();
-
-                            await dm.SendMessageAsync(
-                                "⚠️ **Bulk Farm Registration – Failed Entries**\n" +
-                                "Fix these and re-submit using `/farm add` or `/farm bulk`.\n"
-                            );
-
-                            var chunks = ChunkLines(
-                                failures.Select(f => $"• {f}")
-                            );
-
-                            foreach (var chunk in chunks)
-                            {
-                                await dm.SendMessageAsync(chunk);
-                            }
-
-                            dmSent = true;
-                        }
-                        catch
-                        {
-                            dmSent = false;
-                        }
+                        await dm.SendMessageAsync(chunk);
                     }
+
+                    dmSent = true;
                 }
                 catch
                 {
                     dmSent = false;
                 }
             }
-
-
 
             // =========================
             // EPHEMERAL SUMMARY
