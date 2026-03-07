@@ -676,6 +676,138 @@ FarmCharlie | 987654",
                     $"Owner **{farm.OwnerIngameName}** has been notified about potential offline farms."),
                 ephemeral: true);
         }
+        // ======================================================
+        // MODAL HANDLER - SINGLE FARM REGISTER
+        // ====================================================== 
+
+
+        // ======================================================
+        // MODAL HANDLER - SINGLE FARM REGISTER
+        // ======================================================
+
+        [ModalInteraction("register", ignoreGroupNames: true)]
+        public async Task HandleRegisterFarm(RegisterFarmModal modal)
+        {
+            await DeferAsync(ephemeral: true);
+
+            try
+            {
+                var user = (SocketGuildUser)Context.User;
+
+                await _farmService.RegisterFarmAsync(
+                    farmId: modal.FarmId.Trim(),
+                    farmName: modal.FarmName.Trim(),
+                    ownerDiscordId: user.Id.ToString(),
+                    ownerIngameName: user.Nickname ?? user.Username
+                );
+
+                await FollowupAsync(
+                    embed: EmbedHelper.Success(
+                        $"Farm **{modal.FarmName}** registered successfully."),
+                    ephemeral: true);
+            }
+            catch (Exception ex)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error(ex.Message),
+                    ephemeral: true);
+            }
+        }
+
+
+        // ======================================================
+        // MODAL HANDLER - BULK FARM REGISTER
+        // ======================================================
+
+        [ModalInteraction("register_farm_bulk", ignoreGroupNames: true)]
+        public async Task HandleBulkFarmRegister(RegisterFarmBulkModal modal)
+        {
+            await DeferAsync(ephemeral: true);
+
+            var user = (SocketGuildUser)Context.User;
+
+            var lines = modal.FarmList
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList();
+
+            if (lines.Count > 15)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error(
+                        $"You submitted **{lines.Count} farms**. Maximum **15 farms per bulk submission**."),
+                    ephemeral: true);
+
+                return;
+            }
+
+            int successCount = 0;
+            var failures = new List<string>();
+
+            foreach (var line in lines)
+            {
+                var parts = line.Split('|', StringSplitOptions.RemoveEmptyEntries);
+
+                if (parts.Length != 2)
+                {
+                    failures.Add($"{line} — Invalid format (expected: Name | ID)");
+                    continue;
+                }
+
+                string farmName = parts[0].Trim();
+                string farmId = parts[1].Trim();
+
+                if (!long.TryParse(farmId, out _))
+                {
+                    failures.Add($"{farmName} | {farmId} — Farm ID must be numeric");
+                    continue;
+                }
+
+                try
+                {
+                    await _farmService.RegisterFarmAsync(
+                        farmId,
+                        farmName,
+                        user.Id.ToString(),
+                        user.Nickname ?? user.Username
+                    );
+
+                    successCount++;
+                    await Task.Delay(250);
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{farmName} | {farmId} — {ex.Message}");
+                }
+            }
+
+            var response = new StringBuilder();
+
+            response.AppendLine($"✅ **{successCount} farms registered successfully.**");
+
+            if (failures.Count > 0)
+            {
+                response.AppendLine();
+                response.AppendLine($"⚠️ **{failures.Count} farms failed:**");
+
+                foreach (var f in failures.Take(5))
+                    response.AppendLine($"• {f}");
+
+                if (failures.Count > 5)
+                    response.AppendLine($"...and {failures.Count - 5} more.");
+            }
+
+            await FollowupAsync(
+                embed: EmbedHelper.Info("Bulk Farm Registration", response.ToString()),
+                ephemeral: true);
+        }
+
+
+        // ======================================================
+        // HELPERS
+        // ======================================================
+
 
         // ======================================================
         // HELPERS
