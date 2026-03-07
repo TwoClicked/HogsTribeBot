@@ -524,6 +524,160 @@ FarmCharlie | 987654",
         }
 
         // ======================================================
+        // Farm inactive
+        // ======================================================
+
+        [SlashCommand("inactive", "Notify a player that a farm appears inactive")]
+        public async Task MarkFarmInactive(
+            [Summary("farmid", "Farm ingame ID")] string farmId)
+        {
+            if (Context.User is not SocketGuildUser officer ||
+                !officer.Roles.Any(r =>
+                    r.Id == OfficerRoleId ||
+                    r.Id == FarmManagerRoleId))
+            {
+                await RespondAsync(
+                    embed: EmbedHelper.Error("You do not have permission to use this command."),
+                    ephemeral: true);
+                return;
+            }
+
+            await DeferAsync(ephemeral: true);
+
+            var farm = await _farmService.GetFarmByIdAsync(farmId);
+
+            if (farm == null)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error($"No registered farm found with ID `{farmId}`."),
+                    ephemeral: true);
+                return;
+            }
+
+            if (!ulong.TryParse(farm.OwnerDiscordId, out var ownerId))
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error("Farm owner Discord ID is invalid."),
+                    ephemeral: true);
+                return;
+            }
+
+            var owner = Context.Guild.GetUser(ownerId);
+
+            if (owner == null)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Warning(
+                        "Farm found, but the owner is no longer in the server."),
+                    ephemeral: true);
+                return;
+            }
+
+            try
+            {
+                var dm = await owner.CreateDMChannelAsync();
+
+                await dm.SendMessageAsync(
+                    embed: EmbedHelper.Info(
+                        "Inactive Farm Notice",
+                        $"One of your farms may be inactive and should be checked.\n\n" +
+                        $"**Farm Name:** {farm.FarmName}\n" +
+                        $"**Farm ID:** `{farm.FarmId}`")
+                );
+            }
+            catch
+            {
+                await FollowupAsync(
+                    $"Failed to send DM to **{farm.OwnerIngameName}** (privacy settings or bot blocked).",
+                    ephemeral: true);
+                return;
+            }
+
+            await FollowupAsync(
+                embed: EmbedHelper.Success(
+                    $"The owner ({farm.OwnerIngameName}) of farm `{farm.FarmId}` has been notified."),
+                ephemeral: true);
+        }
+
+
+        // ======================================================
+        // Farm inactive bulk
+        // ======================================================
+
+        [SlashCommand("inactivebulk", "Notify a farm owner that multiple farms may be offline")]
+        public async Task MarkFarmsInactiveBulkByFarmId(
+            [Summary("farmid", "Any farm ID owned by the player")] string farmId)
+        {
+            if (Context.User is not SocketGuildUser officer ||
+                !officer.Roles.Any(r =>
+                    r.Id == OfficerRoleId ||
+                    r.Id == FarmManagerRoleId))
+            {
+                await RespondAsync(
+                    embed: EmbedHelper.Error("You do not have permission to use this command."),
+                    ephemeral: true);
+                return;
+            }
+
+            await DeferAsync(ephemeral: true);
+
+            var farm = await _farmService.GetFarmByIdAsync(farmId);
+
+            if (farm == null)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error($"No registered farm found with ID `{farmId}`."),
+                    ephemeral: true);
+                return;
+            }
+
+            if (!ulong.TryParse(farm.OwnerDiscordId, out var ownerId))
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error("Farm owner has an invalid Discord ID."),
+                    ephemeral: true);
+                return;
+            }
+
+            var owner = Context.Guild.GetUser(ownerId);
+
+            if (owner == null)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Warning(
+                        "Farm found, but the owner is no longer in this server."),
+                    ephemeral: true);
+                return;
+            }
+
+            try
+            {
+                var dm = await owner.CreateDMChannelAsync();
+
+                await dm.SendMessageAsync(
+                    embed: EmbedHelper.Info(
+                        "Farm Activity Check",
+                        "An officer has noticed that several of your farms may have been " +
+                        "offline for an extended period of time. Please review them when " +
+                        "you have a moment."
+                    )
+                );
+            }
+            catch
+            {
+                await FollowupAsync(
+                    $"Failed to send DM to **{farm.OwnerIngameName}** (privacy settings or bot blocked).",
+                    ephemeral: true);
+                return;
+            }
+
+            await FollowupAsync(
+                embed: EmbedHelper.Success(
+                    $"Owner **{farm.OwnerIngameName}** has been notified about potential offline farms."),
+                ephemeral: true);
+        }
+
+        // ======================================================
         // HELPERS
         // ======================================================
         private static List<string> ChunkLines(IEnumerable<string> lines, int maxChars = 1800)
