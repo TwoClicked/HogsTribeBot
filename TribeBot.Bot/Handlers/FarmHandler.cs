@@ -773,6 +773,225 @@ namespace TribeBot.Bot.Handlers
             return chunks;
         }
 
+        // ======================================================
+        // /farm addfor – Officer registers a farm for someone
+        // ======================================================
+        [SlashCommand("addfor", "Register a farm for another player (Officer/Farm manager only)")]
+        public async Task AddFarmFor(
+            [Summary("player", "Discord user who owns the farm")] SocketGuildUser targetUser,
+            [Summary("farmname", "Farm Name")] string farmName,
+            [Summary("farmid", "Farm Ingame ID")] string farmId)
+        {
+            // Officer-only (Officer OR Farm Manager)
+            if (Context.User is not SocketGuildUser officer ||
+                !officer.Roles.Any(r =>
+                    r.Id == OfficerRoleId ||
+                    r.Id == FarmManagerRoleId))
+            {
+                await RespondAsync(
+                    embed: EmbedHelper.Error("You do not have permission to use this command."),
+                    ephemeral: true);
+                return;
+            }
 
+            await DeferAsync(ephemeral: true);
+
+            try
+            {
+                // Register farm
+                await _farmService.RegisterFarmAsync(
+                    farmId: farmId.Trim(),
+                    farmName: farmName.Trim(),
+                    ownerDiscordId: targetUser.Id.ToString(),
+                    ownerIngameName: targetUser.Nickname ?? targetUser.Username
+                );
+
+                // Try DM user
+                try
+                {
+                    var dm = await targetUser.CreateDMChannelAsync();
+
+                    await dm.SendMessageAsync(
+                        embed: EmbedHelper.Info(
+                            "🌾 Farm Registered",
+                            $"An officer has registered a farm for you.\n\n" +
+                            $"**Farm Name:** {farmName}\n" +
+                            $"**Farm ID:** `{farmId}`\n\n" +
+                            $"You can view all your farms using `/farm list`."
+                        ));
+                }
+                catch
+                {
+                    // DM failed (privacy settings etc)
+                }
+
+                await FollowupAsync(
+                    embed: EmbedHelper.Success(
+                        $"Farm **{farmName}** (`{farmId}`) has been registered for {targetUser.Mention}."),
+                    ephemeral: true);
+            }
+            catch (Exception ex)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error(ex.Message),
+                    ephemeral: true);
+            }
+        }
+
+        // ======================================================
+        // /farm bulkfor – Officer bulk registers farms for user
+        // ======================================================
+        [SlashCommand("bulkfor", "Register multiple farms for a player (Officer/Farm manager only)")]
+        public async Task BulkRegisterForUser(
+            [Summary("player", "Discord user who owns the farms")] SocketGuildUser targetUser)
+        {
+            // Officer-only (Officer OR Farm Manager)
+            if (Context.User is not SocketGuildUser officer ||
+                !officer.Roles.Any(r =>
+                    r.Id == OfficerRoleId ||
+                    r.Id == FarmManagerRoleId))
+            {
+                await RespondAsync(
+                    embed: EmbedHelper.Error("You do not have permission to use this command."),
+                    ephemeral: true);
+                return;
+            }
+
+            var modal = new ModalBuilder()
+                .WithTitle($"Register Farms for {targetUser.DisplayName}")
+                .WithCustomId($"register_farm_bulk_for:{targetUser.Id}")
+                .AddTextInput(
+                    label: "Farm list (One per line: Name | ID)",
+                    customId: "farm_list",
+                    style: TextInputStyle.Paragraph,
+                    placeholder:
+                    @"FarmAlpha | 123456
+                    FarmBravo | 654321
+                    FarmCharlie | 987654",
+                    required: true,
+                    maxLength: 2000
+                );
+
+            await RespondWithModalAsync(modal.Build());
+        }
+
+        [ModalInteraction("register_farm_bulk_for:*", ignoreGroupNames: true)]
+        public async Task HandleBulkRegisterForUser(string customId, RegisterFarmBulkModal modal)
+        {
+            await DeferAsync(ephemeral: true);
+
+            var parts = customId.Split(':');
+            if (parts.Length != 2 || !ulong.TryParse(parts[1], out var targetUserId))
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error("Invalid target user."),
+                    ephemeral: true);
+                return;
+            }
+
+            var targetUser = Context.Guild.GetUser(targetUserId);
+
+            if (targetUser == null)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error("Target user not found."),
+                    ephemeral: true);
+                return;
+            }
+
+            var lines = modal.FarmList
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(l => l.Trim())
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .ToList();
+
+            // Max 15 farms validation
+            if (lines.Count > 15)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error(
+                        $"You submitted **{lines.Count} farms**. Maximum **15 farms per bulk submission**."),
+                    ephemeral: true);
+                return;
+            }
+
+            int successCount = 0;
+            var failures = new List<string>();
+
+            foreach (var line in lines)
+            {
+                var partsLine = line.Split('|', StringSplitOptions.RemoveEmptyEntries);
+
+                if (partsLine.Length != 2)
+                {
+                    failures.Add($"{line} — Invalid format (expected: Name | ID)");
+                    continue;
+                }
+
+                string farmName = partsLine[0].Trim();
+                string farmId = partsLine[1].Trim();
+
+                if (!long.TryParse(farmId, out _))
+                {
+                    failures.Add($"{farmName} | {farmId} — Farm ID must be numeric");
+                    continue;
+                }
+
+                try
+                {
+                    await _farmService.RegisterFarmAsync(
+                        farmId,
+                        farmName,
+                        targetUser.Id.ToString(),
+                        targetUser.Nickname ?? targetUser.Username
+                    );
+
+                    successCount++;
+
+                    await Task.Delay(250); // prevent API rate limits
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{farmName} | {farmId} — {ex.Message}");
+                }
+            }
+
+            // DM user informing farms were added
+            try
+            {
+                var dm = await targetUser.CreateDMChannelAsync();
+
+                await dm.SendMessageAsync(
+                    embed: EmbedHelper.Info(
+                        "🌾 Farms Registered",
+                        $"An officer has registered **{successCount} farms** for you.\n\n" +
+                        $"You can check them using `/farm list`."
+                    ));
+            }
+            catch
+            {
+                // ignore DM failure
+            }
+
+            var response = new StringBuilder();
+
+            response.AppendLine($"✅ **{successCount} farms registered** for {targetUser.Mention}.");
+
+            if (failures.Count > 0)
+            {
+                response.AppendLine();
+                response.AppendLine($"⚠️ **{failures.Count} farms failed:**");
+
+                foreach (var f in failures.Take(5))
+                    response.AppendLine($"• {f}");
+
+                if (failures.Count > 5)
+                    response.AppendLine($"...and {failures.Count - 5} more.");
+            }
+
+            await FollowupAsync(
+                embed: EmbedHelper.Info("Officer Bulk Farm Registration", response.ToString()),
+                ephemeral: true);
+        }
     }
 }
