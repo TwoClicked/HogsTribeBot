@@ -72,7 +72,7 @@ namespace TribeBot.Bot.UI
             .AddField("Players",
                 "`!myfines` — View your fines")
             .AddField("Officer Only",
-                "`!fineuser` — Issue an event fine\n" +
+                "`!fineuser` — Issue an fine\n" +
                 "`!finereign` — Issue a reign fine\n" +
                 "`!finelist` — View all fines (full list)\n" +
                 "`!unpaidfines` — View unpaid fines grouped by type\n" +

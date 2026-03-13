@@ -1,9 +1,11 @@
 ﻿using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Collections.Generic;
+using TribeBot.Bot.UI;
+using TribeBot.Core.Entities;
 
 namespace TribeBot.Bot.Handlers
 {
@@ -16,6 +18,7 @@ namespace TribeBot.Bot.Handlers
         private const ulong OfficerRoleId = 1222665812775534592;
         private const ulong HogsEventsRoleId = 1448513656542199880;  // Opt-in event notifications
         private const ulong HogsRoleId = 1222668156271591485;        // Full tribe HOGS role
+        private const ulong EventCoordinatorRoleId = 1284094048260587622;
 
         // OFFICER LOG CHANNEL
         private const ulong OfficerLogChannelId = 1440211043820507217;
@@ -99,13 +102,14 @@ namespace TribeBot.Bot.Handlers
         [SlashCommand("hesworn", "Notify all subscribed users that the next Sworn Vengeance level is unlocked.")]
         public async Task NotifySwornUnlocked()
         {
-            var officer = Context.Guild.GetUser(Context.User.Id);
+            var user = Context.Guild.GetUser(Context.User.Id);
 
-            if (!officer.Roles.Any(r => r.Id == OfficerRoleId))
+            if (!user.Roles.Any(r => r.Id == OfficerRoleId || r.Id == EventCoordinatorRoleId))
             {
-                await RespondAsync("You do not have permission to use this command.", ephemeral: true);
+                await RespondAsync(embed: EmbedHelper.Error("You do not have permission."), ephemeral: true);
                 return;
             }
+
 
             var embed = new EmbedBuilder()
                 .WithTitle("⚔️ Sworn Vengeance Update")
@@ -128,7 +132,7 @@ namespace TribeBot.Bot.Handlers
             // Officer log
             await SendOfficerLogAsync(
                 "⚔️ Sworn Vengeance Notification Summary",
-                officer.Username,
+                user.Username,
                 sent,
                 failed
             );
@@ -141,11 +145,12 @@ namespace TribeBot.Bot.Handlers
         [SlashCommand("heswornfinal", "Notify the entire HOGS tribe that Sworn Level 15 is unlocked — final race!")]
         public async Task NotifySwornFinal()
         {
-            var officer = Context.Guild.GetUser(Context.User.Id);
 
-            if (!officer.Roles.Any(r => r.Id == OfficerRoleId))
+            var user = Context.Guild.GetUser(Context.User.Id);
+
+            if (!user.Roles.Any(r => r.Id == OfficerRoleId || r.Id == EventCoordinatorRoleId))
             {
-                await RespondAsync("You do not have permission to use this command.", ephemeral: true);
+                await RespondAsync(embed: EmbedHelper.Error("You do not have permission."), ephemeral: true);
                 return;
             }
 
@@ -173,7 +178,7 @@ namespace TribeBot.Bot.Handlers
             // Officer log
             await SendOfficerLogAsync(
                 "🚨 FINAL Sworn Vengeance Level 15 — Tribe Alert Summary",
-                officer.Username,
+                user.Username,
                 sent,
                 failed
             );

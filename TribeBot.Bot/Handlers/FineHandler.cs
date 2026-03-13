@@ -305,6 +305,8 @@ namespace TribeBot.Bot.Handlers
         // ======================================================================
         // !FINEREIGN
         // ======================================================================
+        private const long RepeatReignPenalty = 200_000_000;
+
         private async Task IssueReignFine(SocketMessage message)
         {
             if (!IsOfficer(message)) return;
@@ -326,7 +328,7 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            if (!int.TryParse(parts[2], out int amount) || amount <= 0)
+            if (!long.TryParse(parts[2], out long amount) || amount <= 0)
             {
                 await message.Channel.SendMessageAsync(embed:
                     EmbedHelper.Error("Invalid fine amount."));
@@ -344,45 +346,87 @@ namespace TribeBot.Bot.Handlers
             }
 
             var allFines = await _fineService.GetAllFinesAsync();
+
             bool repeatOffense = allFines.Any(f =>
                 f.DiscordUserId == member.DiscordUserId &&
                 f.FineType == "Reign");
 
-            await _fineService.AddReignFineAsync(member, amount, reason);
+            long originalAmount = amount;
 
-            string extra = repeatOffense
-                ? "Strikes added: **2** (repeat offense)"
-                : "No strikes added (first offense)";
+            if (repeatOffense)
+                amount += RepeatReignPenalty;
+
+            await _fineService.AddReignFineAsync(member, (int)amount, reason);
+
+            string extra;
+            if (repeatOffense)
+            {
+                extra =
+                    $"⚠️ **Repeat Offense Detected**\n" +
+                    $"• Base Fine: **{originalAmount:N0}**\n" +
+                    $"• Repeat Penalty: **{RepeatReignPenalty:N0}**\n" +
+                    $"• Final Fine: **{amount:N0}**\n\n" +
+                    $"Strikes Added: **2**";
+            }
+            else
+            {
+                extra =
+                    $"• Final Fine: **{amount:N0}**\n" +
+                    $"No strikes added (first offense)";
+            }
 
             await message.Channel.SendMessageAsync(embed:
                 EmbedHelper.Success(
                     $"⚔️ **Reign Fine Issued**\n\n" +
                     $"• User: {target.Mention}\n" +
-                    $"• Amount: **{amount:N0}**\n" +
-                    $"• Reason: *{reason}*\n" +
-                    $"{extra}"
+                    $"{extra}\n" +
+                    $"• Reason: *{reason}*"
                 ));
 
             try
             {
                 var dm = await target.CreateDMChannelAsync();
 
-                string dmMsg = repeatOffense
-                    ? $"⚠️ **Repeat Reign Fine!**\nAmount: **{amount:N0}**\nReason: {reason}\nStrikes Added: **2**\n🚫 Blacklisted from the next TWO reign events.\nPay in <#{FinePaymentChannelId}>."
-                    : $"⚠️ **Reign Fine**\nAmount: **{amount:N0}**\nReason: {reason}\nNo strikes added.\nPay in <#{FinePaymentChannelId}>.";
+                string dmMsg;
+
+                if (repeatOffense)
+                {
+                    dmMsg =
+                        $"⚠️ **Repeat Reign Fine Issued**\n\n" +
+                        $"Reason: {reason}\n\n" +
+                        $"Base Fine: **{originalAmount:N0}**\n" +
+                        $"Repeat Penalty: **{RepeatReignPenalty:N0}**\n" +
+                        $"Final Fine: **{amount:N0}**\n\n" +
+                        $"🚫 Because this is a repeat offense you received:\n" +
+                        $"• **+200,000,000 additional fine**\n" +
+                        $"• **2 strikes**\n" +
+                        $"• **Blacklisted from the next TWO reign events**\n\n" +
+                        $"Pay in <#{FinePaymentChannelId}>.";
+                }
+                else
+                {
+                    dmMsg =
+                        $"⚠️ **Reign Fine Issued**\n\n" +
+                        $"Reason: {reason}\n" +
+                        $"Fine Amount: **{amount:N0}**\n\n" +
+                        $"No strikes added (first offense).\n" +
+                        $"Pay in <#{FinePaymentChannelId}>.";
+                }
 
                 await dm.SendMessageAsync(dmMsg);
             }
             catch { }
 
             await SendLog("Reign Fine Issued", new()
-            {
-                { "User", target.Username },
-                { "Amount", amount.ToString("N0") },
-                { "Officer", message.Author.Username },
-                { "Reason", reason },
-                { "Repeat Offender", repeatOffense ? "Yes" : "No" }
-            });
+          {
+              { "User", target.Username },
+              { "Base Amount", originalAmount.ToString("N0") },
+              { "Penalty Added", repeatOffense ? RepeatReignPenalty.ToString("N0") : "0" },
+              { "Final Amount", amount.ToString("N0") },
+              { "Officer", message.Author.Username },
+              { "Reason", reason },
+              { "Repeat Offender", repeatOffense ? "Yes (+200M + 2 strikes)" : "No" }
+          });
         }
 
         // ======================================================================

@@ -21,6 +21,7 @@ namespace TribeBot.Bot.Handlers
         private const ulong EventCoordinatorRoleId = 1284094048260587622;
 
 
+
         public EventsManagementHandler(IGoogleSheetsDataStore data, DiscordSocketClient client)
         {
             _data = data;
