@@ -190,6 +190,9 @@ namespace TribeBot.Data.Interfaces
         // Remove farm by ID
         Task RemoveFarmAsync(string farmId);
 
+        // Update an existing farm
+        Task UpdateFarmAsync(string oldFarmId, Farm updatedFarm);
+
         // ==========================================================================
         // FARM TRIBE ASSIGNMENTS
         // ==========================================================================

@@ -1333,6 +1333,45 @@ namespace TribeBot.Data.GoogleSheets
 
             return list;
         }
+        public async Task<List<FarmRow>> GetAllFarmRowsAsync()
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{FarmsSheet}!A2:E"
+            );
+
+            var response = await request.ExecuteAsync();
+            var rows = response.Values;
+
+            var list = new List<FarmRow>();
+            if (rows == null) return list;
+
+            for (int i = 0; i < rows.Count; i++)
+            {
+                var row = rows[i];
+                if (row.Count < 5) continue;
+
+                list.Add(new FarmRow
+                {
+                    RowIndex = i + 2, // 🔥 THIS is the key fix
+                    Farm = new Farm
+                    {
+                        FarmId = row[0].ToString(),
+                        FarmName = row[1].ToString(),
+                        OwnerDiscordId = row[2].ToString(),
+                        OwnerIngameName = row[3].ToString(),
+                        RegisteredUtc = DateTime.Parse(row[4].ToString())
+                    }
+                });
+            }
+
+            return list;
+        }
+        public class FarmRow
+        {
+            public Farm Farm { get; set; }
+            public int RowIndex { get; set; }
+        }
 
         // Single ID, Linked to a user or returning NULL if farm has no owner
         public async Task<Farm?> GetFarmByIdAsync(string farmId)
@@ -1911,8 +1950,74 @@ namespace TribeBot.Data.GoogleSheets
                 MessageId = ulong.Parse(r[4].ToString()!, CultureInfo.InvariantCulture),
                 IsClosed = bool.Parse(r[5].ToString()!)
             }).ToList();
-
         }
 
+        public async Task UpdateFarmAsync(string oldFarmId, Farm updatedFarm)
+        {
+
+            Console.WriteLine("=== UPDATE FARM DEBUG ===");
+            Console.WriteLine($"OLD ID: {oldFarmId}");
+            Console.WriteLine($"NEW ID: {updatedFarm.FarmId}");
+            Console.WriteLine($"NEW NAME: {updatedFarm.FarmName}");
+
+            var farmRows = await GetAllFarmRowsAsync();
+
+            var match = farmRows.FirstOrDefault(f =>
+                f.Farm.FarmId.Trim() == oldFarmId.Trim());
+
+            if (match == null)
+                throw new Exception("Farm not found.");
+
+            Console.WriteLine($"FOUND ROW: {match.RowIndex}");
+
+            int row = match.RowIndex; // ✅ REAL row
+
+            var values = new List<object>
+    {
+        long.Parse(updatedFarm.FarmId),
+        updatedFarm.FarmName,
+        updatedFarm.OwnerDiscordId,
+        updatedFarm.OwnerIngameName,
+        updatedFarm.RegisteredUtc.ToString("o")
+    };
+
+            var request = _sheetsService.Spreadsheets.Values.Update(
+                new ValueRange
+                {
+                    Values = new List<IList<object>> { values }
+                },
+                _spreadsheetId,
+                $"{FarmsSheet}!A{row}:E{row}"
+            );
+
+            request.ValueInputOption =
+                Google.Apis.Sheets.v4.SpreadsheetsResource.ValuesResource
+                    .UpdateRequest.ValueInputOptionEnum.RAW;
+
+            await request.ExecuteAsync();
+        }
+
+
+        private async Task UpdateRowAsync(int rowIndex, IList<object> values)
+        {
+            var range = $"{FarmsSheet}!A{rowIndex}:E{rowIndex}";
+
+            var valueRange = new ValueRange
+            {
+                Values = new List<IList<object>> { values }
+            };
+
+            var request = _sheetsService.Spreadsheets.Values.Update(
+                valueRange,
+                _spreadsheetId,
+                range
+            );
+
+            request.ValueInputOption =
+                Google.Apis.Sheets.v4.SpreadsheetsResource.ValuesResource
+                    .UpdateRequest.ValueInputOptionEnum.USERENTERED;
+
+            await request.ExecuteAsync();
+        }
     }
 }

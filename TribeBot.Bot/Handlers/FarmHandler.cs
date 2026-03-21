@@ -676,9 +676,7 @@ FarmCharlie | 987654",
                     $"Owner **{farm.OwnerIngameName}** has been notified about potential offline farms."),
                 ephemeral: true);
         }
-        // ======================================================
-        // MODAL HANDLER - SINGLE FARM REGISTER
-        // ====================================================== 
+
 
 
         // ======================================================
@@ -704,6 +702,48 @@ FarmCharlie | 987654",
                 await FollowupAsync(
                     embed: EmbedHelper.Success(
                         $"Farm **{modal.FarmName}** registered successfully."),
+                    ephemeral: true);
+            }
+            catch (Exception ex)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error(ex.Message),
+                    ephemeral: true);
+            }
+        }
+
+        [ModalInteraction("edit_farm", ignoreGroupNames: true)]
+        public async Task HandleEditFarm(EditFarmModal modal)
+        {
+            await DeferAsync(ephemeral: true);
+
+            Console.WriteLine("=== MODAL INPUT DEBUG ===");
+            Console.WriteLine($"Modal FarmName: '{modal.FarmName}'");
+            Console.WriteLine($"Modal FarmId: '{modal.FarmId}'");
+
+            if (!_pendingFarmEdits.TryGetValue(Context.User.Id, out var originalFarmId))
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Error("Edit session expired. Please try again."),
+                    ephemeral: true);
+                return;
+            }
+
+            _pendingFarmEdits.Remove(Context.User.Id);
+
+            try
+            {
+                var user = (SocketGuildUser)Context.User;
+
+                await _farmService.UpdateFarmAsync(
+                    originalFarmId,
+                    modal.FarmId.Trim(),
+                    modal.FarmName.Trim(),
+                    user.Id.ToString()
+                );
+
+                await FollowupAsync(
+                    embed: EmbedHelper.Success("Farm updated successfully."),
                     ephemeral: true);
             }
             catch (Exception ex)
@@ -802,12 +842,6 @@ FarmCharlie | 987654",
                 embed: EmbedHelper.Info("Bulk Farm Registration", response.ToString()),
                 ephemeral: true);
         }
-
-
-        // ======================================================
-        // HELPERS
-        // ======================================================
-
 
         // ======================================================
         // HELPERS

@@ -27,7 +27,6 @@ public class FarmService : IFarmService
         if (existing != null)
             throw new InvalidOperationException("This farm ID is already registered.");
 
-        // Only enforce slots if player is assigned to a farm tribe
         var assignment = await _dataStore.GetAssignmentForUserAsync(ownerDiscordId);
         if (assignment != null)
         {
@@ -36,14 +35,13 @@ public class FarmService : IFarmService
             {
                 if (tribe.UsedSlots + 1 > tribe.TotalSlots)
                     throw new InvalidOperationException(
-                        "Your farm tribe is at capacity. Contact an officer to place this farm.");
+                        "Your farm tribe is at capacity. Contact an officer.");
 
                 tribe.UsedSlots += 1;
                 await _dataStore.UpdateFarmTribeAsync(tribe);
             }
         }
 
-        // Finally, register the farm
         await _dataStore.AddFarmAsync(new Farm
         {
             FarmId = farmId,
@@ -53,7 +51,6 @@ public class FarmService : IFarmService
             RegisteredUtc = DateTime.UtcNow
         });
     }
-
 
     public Task<List<Farm>> GetFarmsForUserAsync(string discordUserId)
         => _dataStore.GetFarmsByOwnerAsync(discordUserId);
@@ -70,10 +67,8 @@ public class FarmService : IFarmService
         if (farm.OwnerDiscordId != discordUserId)
             throw new InvalidOperationException("You do not own this farm.");
 
-        // Remove the farm first
         await _dataStore.RemoveFarmAsync(farmId);
 
-        // Check if player is assigned to a farm tribe
         var assignment = await _dataStore.GetAssignmentForUserAsync(discordUserId);
         if (assignment == null)
             return;
@@ -82,9 +77,44 @@ public class FarmService : IFarmService
         if (tribe == null)
             return;
 
-        // Decrement used slots safely
         tribe.UsedSlots = Math.Max(0, tribe.UsedSlots - 1);
         await _dataStore.UpdateFarmTribeAsync(tribe);
+    }
+
+    public async Task UpdateFarmAsync(
+        string oldFarmId,
+        string newFarmId,
+        string newFarmName,
+        string userId)
+    {
+        var farm = await _dataStore.GetFarmByIdAsync(oldFarmId);
+
+        if (farm == null)
+            throw new InvalidOperationException("Farm not found.");
+
+        if (farm.OwnerDiscordId != userId)
+            throw new InvalidOperationException("You do not own this farm.");
+
+        if (string.IsNullOrWhiteSpace(newFarmName))
+            throw new InvalidOperationException("Farm name cannot be empty.");
+
+        if (!newFarmId.All(char.IsDigit))
+            throw new InvalidOperationException("Farm ID must contain only numbers.");
+
+        if (oldFarmId != newFarmId)
+        {
+            var existing = await _dataStore.GetFarmByIdAsync(newFarmId);
+            if (existing != null)
+                throw new InvalidOperationException("This farm ID is already registered.");
+        }
+
+        oldFarmId = oldFarmId.Trim();
+        newFarmId = newFarmId.Trim();
+
+        farm.FarmId = newFarmId;
+        farm.FarmName = newFarmName;
+
+        await _dataStore.UpdateFarmAsync(oldFarmId, farm); 
     }
 
     public Task<List<Farm>> GetAllFarmsAsync()
