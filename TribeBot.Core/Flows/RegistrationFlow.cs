@@ -188,7 +188,8 @@ namespace TribeBot.Core.Flows
                     KillPoints = _kills,
                     CollectorLevel = _collector,
                     ReignPoints = 0,
-                    IsExempt = false,
+                    BankExempt = false,
+                    DeliveryExempt = false,
                     LastUpdatedUTC = DateTime.UtcNow
                 };
 

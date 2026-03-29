@@ -458,7 +458,7 @@ namespace TribeBot.Bot.Handlers
                     var data = await client.GetByteArrayAsync(att.Url);
                     await File.WriteAllBytesAsync(tmp, data);
                 }
-                int? amt = await _ocrService.ExtractDonationAmountAsync(tmp);
+                int? amt = await _ocrService.ExtractDeliveryDonationAmountAsync(tmp);
                 File.Delete(tmp);
 
                 if (amt.HasValue) total += amt.Value;

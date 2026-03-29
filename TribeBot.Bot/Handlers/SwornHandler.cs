@@ -9,18 +9,17 @@ using TribeBot.Core.Entities;
 
 namespace TribeBot.Bot.Handlers
 {
-    //Hogs event id : 1448513656542199880 Dev test role id 1439972286877794314 HogsMemberRole 1222668156271591485
     public class SwornHandler : InteractionModuleBase<SocketInteractionContext>
     {
         private readonly DiscordSocketClient _client;
 
         // ROLE IDs
         private const ulong OfficerRoleId = 1222665812775534592;
-        private const ulong HogsEventsRoleId = 1448513656542199880;  // Opt-in event notifications
-        private const ulong HogsRoleId = 1222668156271591485;        // Full tribe HOGS role
+        private const ulong HogsEventsRoleId = 1448513656542199880;
+        private const ulong HogsRoleId = 1222668156271591485;
         private const ulong EventCoordinatorRoleId = 1284094048260587622;
 
-        // OFFICER LOG CHANNEL
+        // CHANNEL
         private const ulong OfficerLogChannelId = 1440211043820507217;
 
         public SwornHandler(DiscordSocketClient client)
@@ -28,9 +27,9 @@ namespace TribeBot.Bot.Handlers
             _client = client;
         }
 
-        // =====================================================================
-        // Shared DM sending method
-        // =====================================================================
+        // ============================================================
+        // DM SENDER
+        // ============================================================
         private async Task<(int sent, List<string> failed)> SendSwornDMsAsync(
             ulong roleId,
             Embed embed)
@@ -46,7 +45,7 @@ namespace TribeBot.Bot.Handlers
                 .ToList();
 
             int sent = 0;
-            List<string> failed = new List<string>();
+            List<string> failed = new();
 
             foreach (var member in targets)
             {
@@ -55,7 +54,9 @@ namespace TribeBot.Bot.Handlers
                     var dm = await member.CreateDMChannelAsync();
                     await dm.SendMessageAsync(embed: embed);
                     sent++;
-                    await Task.Delay(1100); // Rate limit friendly
+
+                    // Rate limit protection
+                    await Task.Delay(1100);
                 }
                 catch
                 {
@@ -66,9 +67,9 @@ namespace TribeBot.Bot.Handlers
             return (sent, failed);
         }
 
-        // =====================================================================
-        // Officer log helper
-        // =====================================================================
+        // ============================================================
+        // OFFICER LOG
+        // ============================================================
         private async Task SendOfficerLogAsync(string title, string triggeredBy, int sent, List<string> failed)
         {
             var channel = _client.GetChannel(OfficerLogChannelId) as IMessageChannel;
@@ -95,10 +96,9 @@ namespace TribeBot.Bot.Handlers
             await channel.SendMessageAsync(embed: embed.Build());
         }
 
-
-        // =====================================================================
-        // /hesworn — Notify event subscribers (opt-in role)
-        // =====================================================================
+        // ============================================================
+        // /hesworn
+        // ============================================================
         [SlashCommand("hesworn", "Notify all subscribed users that the next Sworn Vengeance level is unlocked.")]
         public async Task NotifySwornUnlocked()
         {
@@ -110,12 +110,14 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
+            // 🔥 Prevent timeout
+            await DeferAsync(ephemeral: true);
 
             var embed = new EmbedBuilder()
                 .WithTitle("⚔️ Sworn Vengeance Update")
                 .WithDescription(
                     "A new **Sworn Vengeance** boss level has been unlocked!\n\n" +
-                    "If you still have to get your attacks in i suggest you log in and attack!\n" +
+                    "If you still have to get your attacks in I suggest you log in and attack!\n" +
                     "Keep the momentum going."
                 )
                 .WithColor(Color.DarkRed)
@@ -123,13 +125,13 @@ namespace TribeBot.Bot.Handlers
                 .WithTimestamp(DateTimeOffset.UtcNow)
                 .Build();
 
-            // Send DMs to HogsEvent role (opt-in users)
             var (sent, failed) = await SendSwornDMsAsync(HogsEventsRoleId, embed);
 
-            // Officer receives private confirmation
-            await RespondAsync($"Sworn notification sent!\nSent: **{sent}**, Failed: **{failed.Count}**", ephemeral: true);
+            await FollowupAsync(
+                $"Sworn notification sent!\nSent: **{sent}**, Failed: **{failed.Count}**",
+                ephemeral: true
+            );
 
-            // Officer log
             await SendOfficerLogAsync(
                 "⚔️ Sworn Vengeance Notification Summary",
                 user.Username,
@@ -138,14 +140,12 @@ namespace TribeBot.Bot.Handlers
             );
         }
 
-
-        // =====================================================================
-        // /heswornfinal — Notify ALL HOGS members for Level 15 final race
-        // =====================================================================
+        // ============================================================
+        // /heswornfinal
+        // ============================================================
         [SlashCommand("heswornfinal", "Notify the entire HOGS tribe that Sworn Level 15 is unlocked — final race!")]
         public async Task NotifySwornFinal()
         {
-
             var user = Context.Guild.GetUser(Context.User.Id);
 
             if (!user.Roles.Any(r => r.Id == OfficerRoleId || r.Id == EventCoordinatorRoleId))
@@ -153,6 +153,9 @@ namespace TribeBot.Bot.Handlers
                 await RespondAsync(embed: EmbedHelper.Error("You do not have permission."), ephemeral: true);
                 return;
             }
+
+            // 🔥 Prevent timeout
+            await DeferAsync(ephemeral: true);
 
             var embed = new EmbedBuilder()
                 .WithTitle("🚨 FINAL SWORN VENGEANCE — LEVEL 15 UNLOCKED!")
@@ -169,13 +172,13 @@ namespace TribeBot.Bot.Handlers
                 .WithTimestamp(DateTimeOffset.UtcNow)
                 .Build();
 
-            // Send DMs to ALL HOGS members
             var (sent, failed) = await SendSwornDMsAsync(HogsRoleId, embed);
 
-            // Officer private confirmation
-            await RespondAsync($"FINAL Sworn Vengeance alert sent!\nSent: **{sent}**, Failed: **{failed.Count}**", ephemeral: true);
+            await FollowupAsync(
+                $"FINAL Sworn Vengeance alert sent!\nSent: **{sent}**, Failed: **{failed.Count}**",
+                ephemeral: true
+            );
 
-            // Officer log
             await SendOfficerLogAsync(
                 "🚨 FINAL Sworn Vengeance Level 15 — Tribe Alert Summary",
                 user.Username,

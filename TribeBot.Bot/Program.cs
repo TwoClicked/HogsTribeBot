@@ -35,7 +35,7 @@ namespace TribeBot.Bot
         private GeneralHandler _general_handler;
         private FallbackHandler _fallback_handler;
         private bool _bankAuditStarted;
-
+        private DeliveryHandler _deliveryHandler;
 
         public static void Main(string[] args)
             => new Program().MainAsync().GetAwaiter().GetResult();
@@ -65,6 +65,7 @@ namespace TribeBot.Bot
             _help_handler = ActivatorUtilities.CreateInstance<HelpHandler>(_services);
             _general_handler = ActivatorUtilities.CreateInstance<GeneralHandler>(_services);
             _fallback_handler = ActivatorUtilities.CreateInstance<FallbackHandler>(_services);
+            _deliveryHandler = ActivatorUtilities.CreateInstance<DeliveryHandler>(_services);
 
             _client.Log += LogAsync;
             _client.MessageReceived += MessageReceivedAsync;
@@ -129,6 +130,9 @@ namespace TribeBot.Bot
             services.AddSingleton<IMemberService, MemberService>();
             services.AddSingleton<IDonationService, DonationService>();
             services.AddSingleton<IFineService, FineService>();
+
+            services.AddSingleton<IDeliveryEventService, DeliveryEventService>();
+
             services.AddSingleton<IReignService, ReignService>();
             services.AddSingleton<IVoteService, VoteService>();
             services.AddSingleton<IFarmTribeService, FarmTribeService>();
@@ -270,6 +274,8 @@ namespace TribeBot.Bot
             if (await _creator_handler.TryHandleAsync(message)) return;
             if (await _help_handler.TryHandleAsync(message)) return;
             if (await _general_handler.TryHandleAsync(message)) return;
+            if (await _deliveryHandler.TryHandleAsync(message)) return;
+
 
 
             await _fallback_handler.HandleAsync(message);

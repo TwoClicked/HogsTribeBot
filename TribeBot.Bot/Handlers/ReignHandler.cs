@@ -536,7 +536,7 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            member.IsExempt = exempt;
+            member.BankExempt = exempt;
             member.LastUpdatedUTC = DateTime.UtcNow;
 
             await _memberService.RegisterOrUpdateAsync(member);

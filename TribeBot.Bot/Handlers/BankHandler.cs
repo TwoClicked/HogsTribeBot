@@ -123,7 +123,7 @@ namespace TribeBot.Bot.Handlers
             var totals = await _donationService.GetTotalsForAllUsersThisWeekAsync();
 
             var unpaid = members
-                .Where(m => !m.IsExempt &&
+                .Where(m => !m.BankExempt &&
                     (!totals.ContainsKey(m.DiscordUserId) ||
                      totals[m.DiscordUserId] <= 0))
                 .ToList();
@@ -226,7 +226,7 @@ namespace TribeBot.Bot.Handlers
             var totals = await _donationService.GetTotalsForAllUsersThisWeekAsync();
 
             var unpaid = members
-                .Where(m => !m.IsExempt &&
+                .Where(m => !m.BankExempt &&
                     (!totals.ContainsKey(m.DiscordUserId) ||
                      totals[m.DiscordUserId] <= 0))
                 .ToList();
@@ -259,7 +259,7 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            if (member.IsExempt)
+            if (member.BankExempt)
             {
                 await message.Channel.SendMessageAsync(embed:
                     EmbedHelper.Info("Bank Status", "🟦 You are exempt from this week's donation."));
@@ -307,7 +307,7 @@ namespace TribeBot.Bot.Handlers
             var totals = await _donationService.GetTotalsForAllUsersThisWeekAsync();
 
             var unpaid = members
-                .Where(m => !m.IsExempt &&
+                .Where(m => !m.BankExempt &&
                     (!totals.ContainsKey(m.DiscordUserId) ||
                      totals[m.DiscordUserId] <= 0))
                 .ToList();

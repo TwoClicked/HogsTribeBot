@@ -45,7 +45,7 @@ namespace TribeBot.Services.Services
             var donatedIds = donations.Select(d => d.DiscordUserId).ToHashSet();
 
             return members
-                .Where (m => !m.IsExempt) // Those who are put on TRUE in the sheet will not be pulled forward
+                .Where (m => !m.BankExempt) // Those who are put on TRUE in the sheet will not be pulled forward
                 .Where(m => !donatedIds.Contains(m.DiscordUserId))
                 .ToList();
         }

@@ -1,8 +1,12 @@
-﻿using System.Diagnostics;
+﻿using SixLabors.ImageSharp.PixelFormats;
+using System.Diagnostics;
+using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;   // (needed for Mutate if used)
 
 namespace TribeBot.Services.Services
 {
@@ -45,6 +49,194 @@ namespace TribeBot.Services.Services
                 Console.WriteLine(ex);
             }
         }
+
+        public async Task<string> ExtractRawTextAsync(string imagePath)
+        {
+            try
+            {
+                if (!File.Exists(imagePath))
+                    return "";
+
+                string requestJson =
+                    $"{{\"image_path\":\"{imagePath.Replace("\\", "\\\\")}\"}}";
+
+                using var client = new TcpClient();
+                await client.ConnectAsync(_serverHost, _serverPort);
+
+                using var stream = client.GetStream();
+                using var writer = new StreamWriter(stream, Encoding.UTF8);
+                using var reader = new StreamReader(stream, Encoding.UTF8);
+
+                await writer.WriteLineAsync(requestJson);
+                await writer.FlushAsync();
+
+                string? response = await reader.ReadLineAsync();
+
+                if (string.IsNullOrWhiteSpace(response))
+                    return "";
+
+                Console.WriteLine("OCR RAW JSON:");
+                Console.WriteLine(response);
+
+                using JsonDocument doc = JsonDocument.Parse(response);
+
+                if (!doc.RootElement.TryGetProperty("data", out var dataElement))
+                    return "";
+
+                if (dataElement.ValueKind != JsonValueKind.Array)
+                {
+                    if (dataElement.ValueKind == JsonValueKind.String)
+                        return dataElement.GetString() ?? "";
+
+                    return "";
+                }
+
+                // 🔥 STEP 1 — detect BLUE row
+                int targetY = DetectBlueRowY(imagePath);
+
+                int bestDistance = int.MaxValue;
+                string bestText = "";
+
+                foreach (var block in dataElement.EnumerateArray())
+                {
+                    if (!block.TryGetProperty("text", out var textProp))
+                        continue;
+
+                    if (!block.TryGetProperty("box", out var boxProp))
+                        continue;
+
+                    string text = textProp.GetString() ?? "";
+
+                    if (!Regex.IsMatch(text, @"\d"))
+                        continue;
+
+                    int y = boxProp[0][1].GetInt32();
+                    int x = boxProp[0][0].GetInt32();
+
+                    // 🔥 optional safety: only right side (scores)
+                    if (x < 400)
+                        continue;
+
+                    int distance = targetY != -1
+                        ? Math.Abs(y - targetY)
+                        : int.MaxValue;
+
+                    // fallback if blue not detected
+                    if (targetY == -1)
+                        distance = -y; // simulate "take lowest"
+
+                    if (distance < bestDistance)
+                    {
+                        bestDistance = distance;
+                        bestText = text;
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(bestText))
+                    return "";
+
+                bestText = bestText
+                    .Replace(",", "")
+                    .Replace(".", "")
+                    .Replace("O", "0")
+                    .Replace("o", "0")
+                    .Replace("l", "1")
+                    .Replace("I", "1")
+                    .Trim();
+
+                return bestText;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("OCR RAW ERROR:");
+                Console.WriteLine(ex);
+                return "";
+            }
+        }
+
+        public async Task<int?> ExtractDeliveryDonationAmountAsync(string imagePath)
+        {
+            try
+            {
+                if (!File.Exists(imagePath))
+                    return null;
+
+                string requestJson =
+                    $"{{\"image_path\":\"{imagePath.Replace("\\", "\\\\")}\"}}";
+
+                using var client = new TcpClient();
+                await client.ConnectAsync(_serverHost, _serverPort);
+
+                using var stream = client.GetStream();
+                using var writer = new StreamWriter(stream, Encoding.UTF8);
+                using var reader = new StreamReader(stream, Encoding.UTF8);
+
+                await writer.WriteLineAsync(requestJson);
+                await writer.FlushAsync();
+
+                string? response = await reader.ReadLineAsync();
+
+                if (string.IsNullOrWhiteSpace(response))
+                    return null;
+
+                using JsonDocument doc = JsonDocument.Parse(response);
+
+                if (!doc.RootElement.TryGetProperty("data", out var dataElement))
+                    return null;
+
+                if (dataElement.ValueKind != JsonValueKind.Array)
+                    return null;
+
+                int total = 0;
+
+                foreach (var block in dataElement.EnumerateArray())
+                {
+                    if (!block.TryGetProperty("text", out var textProp))
+                        continue;
+
+                    string text = textProp.GetString() ?? "";
+
+                    var matches = Regex.Matches(text, @"(\d+[.,]\d+|\d+)\s*[Mm]");
+
+                    foreach (Match match in matches)
+                    {
+                        string num = match.Groups[1].Value.Replace(",", ".");
+
+                        if (double.TryParse(num,
+                            NumberStyles.Any,
+                            CultureInfo.InvariantCulture,
+                            out double millions))
+                        {
+                            if (millions >= 0.1 && millions <= 50)
+                            {
+                                total += (int)Math.Round(millions * 1_000_000);
+                            }
+                        }
+                    }
+                }
+
+                return total > 0 ? total : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        //Filter out the possible ranks, 
+        public int ExtractMaxNumber(string text)
+        {
+            var matches = Regex.Matches(text, @"\d{1,3}(?:,\d{3})*|\d+");
+
+            var numbers = matches
+                .Select(m => int.Parse(m.Value.Replace(",", "")))
+                .Where(n => n >= 200 && n <= 100000)
+                .ToList();
+
+            return numbers.Any() ? numbers.Max() : 0;
+        }
+
+
 
         public async Task<int?> ExtractDonationAmountAsync(string imagePath)
         {
@@ -221,7 +413,34 @@ namespace TribeBot.Services.Services
                 return null;
             }
         }
+        private int DetectBlueRowY(string path)
+        {
+            using var image = Image.Load<Rgba32>(path);
 
+            int bestY = -1;
+            int bestScore = 0;
+
+            for (int y = 0; y < image.Height; y++)
+            {
+                int bluePixels = 0;
+
+                for (int x = 0; x < image.Width; x++)
+                {
+                    var pixel = image[x, y];
+
+                    if (pixel.B > 140 && pixel.R < 120 && pixel.G < 140)
+                        bluePixels++;
+                }
+
+                if (bluePixels > bestScore)
+                {
+                    bestScore = bluePixels;
+                    bestY = y;
+                }
+            }
+
+            return bestY;
+        }
         private void TryBuildDate(
             int year,
             int month,

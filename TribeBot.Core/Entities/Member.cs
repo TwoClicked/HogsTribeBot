@@ -9,16 +9,17 @@ namespace TribeBot.Core.Entities
 {
     public class Member
     {
-
         public string DiscordUserId { get; set; } = "";
         public string IngameName { get; set; } = "";
         public string IngameId { get; set; }
         public int Might { get; set; }
         public long KillPoints { get; set; }
         public int CollectorLevel { get; set; }
-        public long ReignPoints { get; set; } // Manually updated in sheets by Reign admin
+        public long ReignPoints { get; set; }
         public DateTime LastUpdatedUTC { get; set; }
-        public bool IsExempt { get; set; }
 
+        // 🔥 NEW (split exemptions)
+        public bool BankExempt { get; set; }
+        public bool DeliveryExempt { get; set; }
     }
 }

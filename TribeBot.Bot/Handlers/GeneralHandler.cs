@@ -373,7 +373,7 @@ namespace TribeBot.Bot.Handlers
 
             var donations = await _donationService.GetTotalForUserThisWeekAsync(id);
             string donationStatus =
-                member.IsExempt ? "🟦 EXEMPT" :
+                member.BankExempt ? "🟦 EXEMPT" :
                 donations > 0 ? "✅ PAID" :
                 "❌ UNPAID";
 
@@ -393,7 +393,7 @@ namespace TribeBot.Bot.Handlers
                     $"**Reign Points:** {member.ReignPoints}",
                     inline: false)
                 .AddField("🏦 Donation Status", donationStatus, inline: true)
-                .AddField("🛡️ Exempt", member.IsExempt ? "Yes" : "No", inline: true)
+                .AddField("🛡️ Exempt", member.BankExempt ? "Yes" : "No", inline: true)
                 .WithFooter($"Last Updated: {member.LastUpdatedUTC:yyyy-MM-dd HH:mm} UTC")
                 .Build();
 
@@ -464,7 +464,7 @@ namespace TribeBot.Bot.Handlers
 
             var donations = await _donationService.GetTotalForUserThisWeekAsync(id);
             string donationStatus =
-                member.IsExempt ? "🟦 EXEMPT" :
+                member.BankExempt ? "🟦 EXEMPT" :
                 donations > 0 ? "✅ PAID" : "❌ UNPAID";
 
             var fines = await _fineService.GetFinesForUserAsync(id);
@@ -491,7 +491,7 @@ namespace TribeBot.Bot.Handlers
                     $"**ID:** {member.IngameId}\n" +
                     $"**Farm Tribe:** {farmTribeDisplay}\n" +
                     $"**Registered Farms:** {farmCount}\n" +
-                    $"**Exempt:** {(member.IsExempt ? "Yes" : "No")}")
+                    $"**Exempt:** {(member.BankExempt ? "Yes" : "No")}")
                 
                 .AddField("⚔ Stats",
                     $"**Might:** {member.Might:N0}\n" +

@@ -30,6 +30,8 @@ namespace TribeBot.Data.GoogleSheets
         private const string KvKTimedEventsSheet = "KvKTimedEvents";
         private const string RaidEventsSheet = "RaidEvents";
         private const string RaidSignupsSheet = "RaidSignups";
+        private const string DeliveryEventsSheet = "DeliveryEvents";
+        private const string DeliveryEntriesSheet = "DeliveryEntries";
 
 
 
@@ -40,6 +42,7 @@ namespace TribeBot.Data.GoogleSheets
         private const int FarmTribesSheetId = 1089417883;
         private const int FarmsSheetId = 1580596082;
         private const int FarmTribeAssignmentsSheetId = 1758889070;
+
 
         private int GetFarmTribesSheetId() => FarmTribesSheetId;
 
@@ -75,7 +78,7 @@ namespace TribeBot.Data.GoogleSheets
 
         public async Task<List<Member>> GetAllMembersAsync()
         {
-            var range = $"{MembersSheet}!A2:I";
+            var range = $"{MembersSheet}!A2:J";
             var request = _sheetsService.Spreadsheets.Values.Get(_spreadsheetId, range);
             var response = await request.ExecuteAsync();
             var values = response.Values;
@@ -97,7 +100,9 @@ namespace TribeBot.Data.GoogleSheets
                     CollectorLevel = int.TryParse(row[5]?.ToString(), out var c) ? c : 0,
                     ReignPoints = long.TryParse(row[6]?.ToString(), out var rp) ? rp : 0,
                     LastUpdatedUTC = DateTime.TryParse(row[7]?.ToString(), out var d) ? d : DateTime.MinValue,
-                    IsExempt = bool.TryParse(row[8]?.ToString(), out var ex) ? ex : false
+
+                    BankExempt = bool.TryParse(row[8]?.ToString(), out var be) ? be : false,
+                    DeliveryExempt = bool.TryParse(row[9]?.ToString(), out var de) ? de : false
                 };
 
                 list.Add(member);
@@ -121,7 +126,8 @@ namespace TribeBot.Data.GoogleSheets
                 member.CollectorLevel,
                 member.ReignPoints,
                 member.LastUpdatedUTC.ToString("o"),
-                member.IsExempt
+                member.BankExempt,
+                member.DeliveryExempt
             };
 
             if (index == -1)
@@ -2018,6 +2024,137 @@ namespace TribeBot.Data.GoogleSheets
                     .UpdateRequest.ValueInputOptionEnum.USERENTERED;
 
             await request.ExecuteAsync();
+        }
+
+
+        public async Task AddDeliveryEventAsync(string eventId, DateTime startUtc)
+        {
+            var values = new List<object>
+    {
+        eventId,
+        startUtc.ToString("o"),
+        "",         // EndUtc
+        true        // IsActive
+    };
+
+            var append = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange { Values = new List<IList<object>> { values } },
+                _spreadsheetId,
+                $"{DeliveryEventsSheet}!A:D");
+
+            append.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+
+            await append.ExecuteAsync();
+        }
+
+        public async Task EndDeliveryEventAsync(string eventId)
+        {
+            var all = await GetAllDeliveryEventsAsync();
+            int index = all.FindIndex(e => e.EventId == eventId);
+
+            if (index == -1)
+                return;
+
+            int row = index + 2;
+
+            var values = new List<object>
+    {
+        eventId,
+        all[index].StartUtc.ToString("o"),
+        DateTime.UtcNow.ToString("o"),
+        false
+    };
+
+            var update = _sheetsService.Spreadsheets.Values.Update(
+                new ValueRange { Values = new List<IList<object>> { values } },
+                _spreadsheetId,
+                $"{DeliveryEventsSheet}!A{row}:D{row}");
+
+            update.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+
+            await update.ExecuteAsync();
+        }
+
+        public async Task<List<(string EventId, DateTime StartUtc, bool IsActive)>> GetAllDeliveryEventsAsync()
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{DeliveryEventsSheet}!A2:D");
+
+            var response = await request.ExecuteAsync();
+            var rows = response.Values;
+
+            var list = new List<(string, DateTime, bool)>();
+            if (rows == null) return list;
+
+            foreach (var row in rows)
+            {
+                if (row.Count < 4) continue;
+
+                list.Add((
+                    row[0].ToString(),
+                    DateTime.Parse(row[1].ToString()),
+                    bool.Parse(row[3].ToString())
+                ));
+            }
+
+            return list;
+        }
+
+        public async Task AddDeliveryEntryAsync(DeliveryEntry entry)
+        {
+            var values = new List<object>
+    {
+        entry.EventId,
+        entry.DiscordUserId,
+        entry.IngameName,
+        entry.SubmissionType,
+        entry.Amount,
+        entry.TimestampUtc.ToString("o")
+    };
+
+            var append = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange { Values = new List<IList<object>> { values } },
+                _spreadsheetId,
+                $"{DeliveryEntriesSheet}!A:F");
+
+            append.ValueInputOption =
+                SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+
+            await append.ExecuteAsync();
+        }
+
+        public async Task<List<DeliveryEntry>> GetDeliveryEntriesByEventAsync(string eventId)
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(
+                _spreadsheetId,
+                $"{DeliveryEntriesSheet}!A2:F");
+
+            var response = await request.ExecuteAsync();
+            var rows = response.Values;
+
+            var list = new List<DeliveryEntry>();
+            if (rows == null) return list;
+
+            foreach (var row in rows)
+            {
+                if (row.Count < 6) continue;
+                if (row[0].ToString() != eventId) continue;
+
+                list.Add(new DeliveryEntry
+                {
+                    EventId = row[0].ToString(),
+                    DiscordUserId = row[1].ToString(),
+                    IngameName = row[2].ToString(),
+                    SubmissionType = row[3].ToString(),
+                    Amount = int.Parse(row[4].ToString()),
+                    TimestampUtc = DateTime.Parse(row[5].ToString())
+                });
+            }
+
+            return list;
         }
     }
 }

@@ -66,6 +66,26 @@ namespace TribeBot.Bot.UI
             .WithColor(Color.Green)
             .Build();
 
+
+        // DELIVERY
+        public static Embed Delivery() => new EmbedBuilder()
+            .WithTitle("📦 Delivery Event Commands")
+            .AddField("Players",
+                "`!checkdelivery` — Check if you completed the event\n" +
+                "`!gold` — Submit gold contribution\n" +
+                "`!bracelet` — Submit bracelet contribution\n\n" +
+                "After selecting a mode, upload your screenshot in the delivery channel")
+            .AddField("Officer Only",
+                "`!deliverystart` — Start a delivery event\n" +
+                "`!deliverystatus` — Show missing players\n" +
+                "`!deliveryend` — End event & issue fines")
+            .AddField("Requirements",
+                "📿 ≥ 1000 bracelets\n" +
+                "💰 ≥ 75,000,000 gold\n\n" +
+                "Missing the event results in a **150,000,000 gold fine**")
+            .WithColor(Color.Orange)
+            .Build();
+
         // FINES
         public static Embed Fines() => new EmbedBuilder()
             .WithTitle("💀 Fine Commands")

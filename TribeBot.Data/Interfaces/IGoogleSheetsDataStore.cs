@@ -4,7 +4,6 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using TribeBot.Core.Entities;
-
 namespace TribeBot.Data.Interfaces
 {
     public interface IGoogleSheetsDataStore
@@ -252,7 +251,18 @@ namespace TribeBot.Data.Interfaces
 
         Task<List<RaidSignup>> GetRaidSignupsAsync(string raidId);
 
+        // ===============================
+        // DELIVERY EVENTS
+        // ===============================
+        Task AddDeliveryEventAsync(string eventId, DateTime startUtc);
+        Task EndDeliveryEventAsync(string eventId);
+        Task<List<(string EventId, DateTime StartUtc, bool IsActive)>> GetAllDeliveryEventsAsync();
 
+        // ===============================
+        // DELIVERY ENTRIES
+        // ===============================
+        Task AddDeliveryEntryAsync(DeliveryEntry entry);
+        Task<List<DeliveryEntry>> GetDeliveryEntriesByEventAsync(string eventId);
 
     }
 }
