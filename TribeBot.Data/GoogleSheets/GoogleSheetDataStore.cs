@@ -111,11 +111,40 @@ namespace TribeBot.Data.GoogleSheets
             return list;
         }
 
+        public async Task RemoveFarmsForUserAsync(string discordUserId)
+        {
+            var allFarms = await GetAllFarmsAsync();
+            var rowIndexes = allFarms
+                .Select((f, i) => new { f, i })
+                .Where(x => x.f.OwnerDiscordId == discordUserId)
+                .Select(x => x.i + 1) // +1 for header row
+                .OrderByDescending(r => r)
+                .ToList();
+
+            if (rowIndexes.Count == 0) return;
+
+            var requests = rowIndexes.Select(row => new Google.Apis.Sheets.v4.Data.Request
+            {
+                DeleteDimension = new Google.Apis.Sheets.v4.Data.DeleteDimensionRequest
+                {
+                    Range = new Google.Apis.Sheets.v4.Data.DimensionRange
+                    {
+                        SheetId = FarmsSheetId,
+                        Dimension = "ROWS",
+                        StartIndex = row,
+                        EndIndex = row + 1
+                    }
+                }
+            }).ToList();
+
+            var batch = new BatchUpdateSpreadsheetRequest { Requests = requests };
+            await _sheetsService.Spreadsheets.BatchUpdate(batch, _spreadsheetId).ExecuteAsync();
+        }
+
         public async Task SaveMemberAsync(Member member)
         {
             var members = await GetAllMembersAsync();
             int index = members.FindIndex(m => m.DiscordUserId == member.DiscordUserId);
-
             var values = new List<object>
             {
                 member.DiscordUserId,
@@ -135,15 +164,14 @@ namespace TribeBot.Data.GoogleSheets
                 var append = _sheetsService.Spreadsheets.Values.Append(
                     new ValueRange { Values = new List<IList<object>> { values } },
                     _spreadsheetId,
-                    $"{MembersSheet}!A:I");
+                    $"{MembersSheet}!A:J");  // ✅
                 append.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
                 await append.ExecuteAsync();
             }
             else
             {
                 var row = index + 2;
-                var range = $"{MembersSheet}!A{row}:I{row}";
-
+                var range = $"{MembersSheet}!A{row}:J{row}";  // ✅
                 var update = _sheetsService.Spreadsheets.Values.Update(
                     new ValueRange { Values = new List<IList<object>> { values } },
                     _spreadsheetId,

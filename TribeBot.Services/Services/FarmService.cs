@@ -81,6 +81,27 @@ public class FarmService : IFarmService
         await _dataStore.UpdateFarmTribeAsync(tribe);
     }
 
+    public async Task RemoveFarmsForUserAsync(string discordUserId)
+    {
+        var farms = await _dataStore.GetFarmsByOwnerAsync(discordUserId);
+
+        if (farms.Count > 0)
+        {
+            var assignment = await _dataStore.GetAssignmentForUserAsync(discordUserId);
+            if (assignment != null)
+            {
+                var tribe = await _dataStore.GetFarmTribeByIdAsync(assignment.FarmTribeId);
+                if (tribe != null)
+                {
+                    tribe.UsedSlots = Math.Max(0, tribe.UsedSlots - farms.Count);
+                    await _dataStore.UpdateFarmTribeAsync(tribe);
+                }
+            }
+        }
+
+        await _dataStore.RemoveFarmsForUserAsync(discordUserId);
+    }
+
     public async Task UpdateFarmAsync(
         string oldFarmId,
         string newFarmId,
@@ -114,7 +135,7 @@ public class FarmService : IFarmService
         farm.FarmId = newFarmId;
         farm.FarmName = newFarmName;
 
-        await _dataStore.UpdateFarmAsync(oldFarmId, farm); 
+        await _dataStore.UpdateFarmAsync(oldFarmId, farm);
     }
 
     public Task<List<Farm>> GetAllFarmsAsync()

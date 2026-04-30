@@ -25,6 +25,7 @@ namespace TribeBot.Bot.UI
                 .AddOption("Content Creator", "creator", isDefault: selected == "creator")
                 .AddOption("Titles", "titles", isDefault: selected == "titles")
                 .AddOption("Sworn Vengeance", "sworn", isDefault: selected == "sworn")
+                .AddOption("Delivery Events", "delivery", isDefault: selected == "delivery")
                 .AddOption("Events", "events", isDefault: selected == "events")
                 .AddOption("Farms", "farms", isDefault: selected == "farms")
                 .AddOption("Farm Tribes", "farmtribes", isDefault: selected == "farmtribes")

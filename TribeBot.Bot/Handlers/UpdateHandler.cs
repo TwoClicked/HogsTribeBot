@@ -18,7 +18,8 @@ namespace TribeBot.Bot.Handlers
         }
 
         // ============================================================
-        //  Slash Command: /updateprofile
+        //  Slash Command: /
+        //  
         // ============================================================
         [SlashCommand("updateprofile", "Update your HOGS profile using a clean form.")]
         public async Task UpdateProfile()
@@ -58,7 +59,7 @@ namespace TribeBot.Bot.Handlers
             }
 
             // Validate and parse fields
-            if (!int.TryParse(modal.Might, out int might) ||
+            if (!long.TryParse(modal.Might, out long might) ||
                 might < 0 || might > 3000000000)
             {
                 await RespondAsync(embed: EmbedHelper.Error("Invalid Might (0–3,000,000,000)."), ephemeral: true);
@@ -82,12 +83,20 @@ namespace TribeBot.Bot.Handlers
             // Apply updates
             member.IngameName = modal.IngameName;
             member.IngameId = modal.IngameId;
-            member.Might = might;
+            member.Might = (int)might;
             member.KillPoints = kills;
             member.CollectorLevel = collector;
             member.LastUpdatedUTC = DateTime.UtcNow;
 
-            await _memberService.RegisterOrUpdateAsync(member);
+            try
+            {
+                await _memberService.RegisterOrUpdateAsync(member);
+            }
+            catch (Exception ex)
+            {
+                await RespondAsync(embed: EmbedHelper.Error($"Failed to update profile: {ex.Message}"), ephemeral: true);
+                return;
+            }
 
             await RespondAsync(
                 embed: EmbedHelper.Success("Your profile has been successfully updated!"),

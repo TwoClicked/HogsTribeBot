@@ -20,10 +20,11 @@ namespace TribeBot.Core.Interfaces
         Task RemoveFarmAsync(string farmId, string discordUserId);
         Task<List<Farm>> GetAllFarmsAsync();
         Task UpdateFarmAsync(
-    string oldFarmId,
-    string newFarmId,
-    string newFarmName,
-    string userId);
+                            string oldFarmId,
+                            string newFarmId,
+                            string newFarmName,
+                            string userId);
 
+        Task RemoveFarmsForUserAsync(string discordUserId);
     }
 }

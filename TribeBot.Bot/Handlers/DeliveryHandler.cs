@@ -31,7 +31,15 @@ namespace TribeBot.Bot.Handlers
         private const ulong GuildId = 1109193500664287336;
         private const ulong FinePaymentChannelId = 1440431172160061450;
 
+        public const int BraceletRequirement = 1500;
+        public const long GoldRequirement = 75_000_000;
+        public const long FineAmount = 200_000_000;
+
+        // Tracks which mode (gold/bracelet) each user has selected
         private readonly Dictionary<ulong, string> _submissionMode = new();
+
+        // Tracks "donate for someone else" overrides, keyed by uploader's Discord ID
+        private readonly Dictionary<ulong, string> _donateForOverride = new();
 
         public DeliveryHandler(
             DiscordSocketClient client,
@@ -82,6 +90,18 @@ namespace TribeBot.Bot.Handlers
                 return true;
             }
 
+            if (content == "!deliveryreminder")
+            {
+                await SendDeliveryReminder(message);
+                return true;
+            }
+
+            if (content.StartsWith("!donatefor"))
+            {
+                await HandleDonateFor(message);
+                return true;
+            }
+
             if (content == "!gold" || content == "gold")
             {
                 var eventId = await _deliveryService.GetActiveEventIdAsync();
@@ -101,7 +121,7 @@ namespace TribeBot.Bot.Handlers
                 await message.Channel.SendMessageAsync(embed:
                     EmbedHelper.Info(
                         "Gold Submission",
-                        $"💰 Upload your screenshot now.\n\nRequirement: **≥ 75,000,000 gold**"
+                        $"💰 Upload your screenshot now.\n\nRequirement: **≥ {GoldRequirement} gold**"
                     ));
 
                 return true;
@@ -126,7 +146,7 @@ namespace TribeBot.Bot.Handlers
                 await message.Channel.SendMessageAsync(embed:
                     EmbedHelper.Info(
                         "Bracelet Submission",
-                        $"📿 Upload your screenshot now.\n\nRequirement: **≥ 1000 bracelets**"
+                        $"📿 Upload your screenshot now.\n\nRequirement: **≥ {BraceletRequirement} bracelets**"
                     ));
 
                 return true;
@@ -150,13 +170,14 @@ namespace TribeBot.Bot.Handlers
 
             var eventId = await _deliveryService.StartEventAsync();
 
-            EmbedHelper.Success(
-                $"🚀 **Delivery Event Started**\n\n" +
-                $"For Delivery you have two options:\n" +
-                $"📿 ≥ 1000 bracelets\n" +
-                $"💰 ≥ 75,000,000 gold\n\n" +
-                $"Submit in <#{DeliveryChannelId}>"
-            );
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success(
+                    $"🚀 **Delivery Event Started**\n\n" +
+                    $"For Delivery you have two options:\n" +
+                    $"📿 ≥ {BraceletRequirement} bracelets\n" +
+                    $"💰 ≥ {GoldRequirement} gold\n\n" +
+                    $"Submit in <#{DeliveryChannelId}>"
+                ));
 
             await OfficerLog?.SendMessageAsync(embed:
                 EmbedHelper.Log("Delivery Event Started", new()
@@ -164,6 +185,79 @@ namespace TribeBot.Bot.Handlers
                     { "EventId", eventId },
                     { "Started By", message.Author.Username }
                 }));
+
+            // Fire DMs to all members in the background
+            _ = Task.Run(async () =>
+            {
+                if (message.Channel is SocketGuildChannel gc)
+                    await SendStartNotificationsBackground(gc);
+            });
+        }
+
+        private async Task SendStartNotificationsBackground(SocketGuildChannel guildChannel)
+        {
+            var guild = guildChannel.Guild;
+            var allMembers = await _memberService.GetAllMembersAsync();
+
+            int sent = 0;
+            List<string> failures = new();
+
+            foreach (var member in allMembers)
+            {
+                if (!ulong.TryParse(member.DiscordUserId, out ulong uid))
+                {
+                    failures.Add($"{member.IngameName} — invalid Discord ID");
+                    continue;
+                }
+
+                var user = guild.GetUser(uid);
+                if (user == null)
+                {
+                    failures.Add($"{member.IngameName} — user not found");
+                    continue;
+                }
+
+                try
+                {
+                    var dm = await user.CreateDMChannelAsync();
+                    await dm.SendMessageAsync(
+                        $"📦 **Delivery Event Started**\n\n" +
+                        $"Hello **{member.IngameName}**,\n\n" +
+                        $"A new delivery event has begun!\n\n" +
+                        $"Options:\n" +
+                        $"📿 ≥ {BraceletRequirement} bracelets\n" +
+                        $"💰 ≥ {GoldRequirement} gold\n\n" +
+                        $"Submit your screenshot in <#{DeliveryChannelId}>.\n" +
+                        $"Type **bracelet** or **gold** first, then upload."
+                    );
+
+                    sent++;
+                    await Task.Delay(1200); // avoid Discord rate limits
+                }
+                catch
+                {
+                    failures.Add($"{member.IngameName} — DM failed");
+                }
+            }
+
+            if (guildChannel is IMessageChannel channel)
+            {
+                await channel.SendMessageAsync(embed:
+                    EmbedHelper.Info("📬 Start Notification Summary",
+                        $"• Total Members: **{allMembers.Count()}**\n" +
+                        $"• DMs Sent: **{sent}**\n" +
+                        $"• Failed: **{failures.Count}**"
+                    ));
+            }
+
+            if (failures.Any())
+            {
+                await OfficerLog?.SendMessageAsync(embed:
+                    EmbedHelper.Warning(
+                        $"⚠️ **Delivery Start DM Failures**\n\n" +
+                        string.Join("\n", failures)
+                    ));
+            }
         }
 
         // ============================================================
@@ -207,10 +301,10 @@ namespace TribeBot.Bot.Handlers
                             await dm.SendMessageAsync(
                                 $"💸 **Delivery Event Fine Issued**\n\n" +
                                 $"You did not complete the delivery event.\n\n" +
-                                $"Fine Amount: **150,000,000 gold**\n\n" +
+                                $"Fine Amount: **{FineAmount} gold**\n\n" +
                                 $"Please pay in <#{FinePaymentChannelId}>.\n" +
                                 $"If you believe this is incorrect, contact an officer."
-                            ); ;
+                            );
 
                             dmSent++;
                         }
@@ -226,18 +320,14 @@ namespace TribeBot.Bot.Handlers
                 }
             }
 
-            // =========================
-            // OFFICER LOG (BANK STYLE)
-            // =========================
-
             var fields = new Dictionary<string, string>
-             {
-                 { "Mode", "Manual Event End" },
-                 { "EventId", eventId },
-                 { "Fines Issued", finedMembers.Count.ToString() },
-                 { "Amount", "150,000,000" },
-                 { "DM Sent", dmSent.ToString() }
-             };
+            {
+                { "Mode",         "Manual Event End" },
+                { "EventId",      eventId },
+                { "Fines Issued", finedMembers.Count.ToString() },
+                { "Amount",       FineAmount.ToString("N0") },
+                { "DM Sent",      dmSent.ToString() }
+            };
 
             if (finedList.Any())
                 fields["Fined Members"] = string.Join("\n", finedList);
@@ -248,16 +338,12 @@ namespace TribeBot.Bot.Handlers
             await OfficerLog?.SendMessageAsync(embed:
                 EmbedHelper.Log("Delivery Event Fines Issued", fields));
 
-            // =========================
-            // USER-FACING MESSAGE
-            // =========================
-
             await message.Channel.SendMessageAsync(embed:
                 EmbedHelper.Warning(
                     $"❌ **Delivery Event Ended**\n\n" +
                     $"Fines Issued: **{finedMembers.Count}**\n" +
                     $"DM Sent: **{dmSent}**\n" +
-                    $"Amount: **150,000,000**"
+                    $"Amount: **{FineAmount:N0}**"
                 ));
         }
 
@@ -336,11 +422,171 @@ namespace TribeBot.Bot.Handlers
         }
 
         // ============================================================
+        // !DELIVERYREMINDER  (officer-only)
+        // ============================================================
+        private async Task SendDeliveryReminder(SocketMessage message)
+        {
+            if (!IsOfficer(message)) return;
+
+            var eventId = await _deliveryService.GetActiveEventIdAsync();
+            if (eventId == null)
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("No active delivery event."));
+                return;
+            }
+
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info("Delivery Reminder", "📬 Sending reminders in the background…"));
+
+            _ = Task.Run(async () =>
+            {
+                if (message.Channel is SocketGuildChannel gc)
+                    await SendDeliveryReminderBackground(gc, eventId);
+            });
+        }
+
+        private async Task SendDeliveryReminderBackground(SocketGuildChannel guildChannel, string eventId)
+        {
+            var guild = guildChannel.Guild;
+            var missing = await _deliveryService.GetNonParticipantsAsync(eventId);
+
+            var allMembers = await _memberService.GetAllMembersAsync();
+            var targets = allMembers
+                .Where(m => missing.Contains(m.IngameName, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+
+            int sent = 0;
+            List<string> failures = new();
+
+            foreach (var member in targets)
+            {
+                if (!ulong.TryParse(member.DiscordUserId, out ulong uid))
+                {
+                    failures.Add($"{member.IngameName} — invalid Discord ID");
+                    continue;
+                }
+
+                var user = guild.GetUser(uid);
+                if (user == null)
+                {
+                    failures.Add($"{member.IngameName} — user not found");
+                    continue;
+                }
+
+                try
+                {
+                    var dm = await user.CreateDMChannelAsync();
+                    await dm.SendMessageAsync(
+                        $"📦 **Delivery Event Reminder**\n\n" +
+                        $"Hello **{member.IngameName}**,\n\n" +
+                        $"You have not yet completed the active delivery event.\n\n" +
+                        $"Options:\n" +
+                        $"📿 ≥ {BraceletRequirement} bracelets\n" +
+                        $"💰 ≥ {GoldRequirement} gold\n\n" +    
+                        $"Submit your screenshot in <#{DeliveryChannelId}>.\n" +
+                        $"Type **bracelet** or **gold** first, then upload."
+                    );
+
+                    sent++;
+                    await Task.Delay(1200); // avoid Discord rate limits
+                }
+                catch
+                {
+                    failures.Add($"{member.IngameName} — DM failed");
+                }
+            }
+
+            if (guildChannel is IMessageChannel channel)
+            {
+                await channel.SendMessageAsync(embed:
+                    EmbedHelper.Info("📬 Reminder Summary",
+                        $"• Missing: **{targets.Count}**\n" +
+                        $"• DMs Sent: **{sent}**\n" +
+                        $"• Failed: **{failures.Count}**"
+                    ));
+            }
+
+            if (failures.Any())
+            {
+                await OfficerLog?.SendMessageAsync(embed:
+                    EmbedHelper.Warning(
+                        $"⚠️ **Delivery Reminder Failures**\n\n" +
+                        string.Join("\n", failures)
+                    ));
+            }
+        }
+
+        // ============================================================
+        // !DONATEFOR
+        // ============================================================
+        private async Task HandleDonateFor(SocketMessage message)
+        {
+            if (message.Channel.Id != DeliveryChannelId)
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"`!donatefor` can only be used in <#{DeliveryChannelId}>."));
+                return;
+            }
+
+            string args = message.Content.Substring("!donatefor".Length).Trim();
+
+            if (string.IsNullOrWhiteSpace(args))
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning(
+                        "Usage:\n`!donatefor <IngameName>`\n`!donatefor @DiscordUser`"
+                    ));
+                return;
+            }
+
+            if (message.MentionedUsers.Any())
+            {
+                var target = message.MentionedUsers.First();
+                var member = await _memberService.GetMemberByDiscordIdAsync(target.Id.ToString());
+
+                if (member == null)
+                {
+                    await message.Channel.SendMessageAsync(embed:
+                        EmbedHelper.Error($"{target.Username} is not registered."));
+                    return;
+                }
+
+                _donateForOverride[message.Author.Id] = $"DISCORD:{target.Id}";
+
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Success(
+                        $"Your next submission will count for **{member.IngameName}**.\n" +
+                        $"Type **bracelet** or **gold** and then upload your screenshot."
+                    ));
+                return;
+            }
+
+            var allMembers = await _memberService.GetAllMembersAsync();
+            var match = allMembers.FirstOrDefault(m =>
+                m.IngameName.Equals(args, StringComparison.OrdinalIgnoreCase));
+
+            if (match == null)
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"No registered member found named **{args}**."));
+                return;
+            }
+
+            _donateForOverride[message.Author.Id] = $"NAME:{args}";
+
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Success(
+                    $"Your next submission will count for **{match.IngameName}**.\n" +
+                    $"Type **bracelet** or **gold** and then upload your screenshot."
+                ));
+        }
+
+        // ============================================================
         // HANDLE SUBMISSION
         // ============================================================
         private async Task HandleSubmission(SocketMessage message)
         {
-
             var eventId = await _deliveryService.GetActiveEventIdAsync();
 
             if (eventId == null)
@@ -353,22 +599,54 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
-            var member = await _memberService.GetMemberByDiscordIdAsync(message.Author.Id.ToString());
+            // ── Resolve uploader ──────────────────────────────────────
+            string uploaderDiscordId = message.Author.Id.ToString();
+
+            string? targetDiscordId = uploaderDiscordId;
+            string? targetNameOverride = null;
+
+            if (_donateForOverride.TryGetValue(message.Author.Id, out string? overrideValue))
+            {
+                if (overrideValue.StartsWith("DISCORD:"))
+                    targetDiscordId = overrideValue["DISCORD:".Length..];
+                else if (overrideValue.StartsWith("NAME:"))
+                {
+                    targetNameOverride = overrideValue["NAME:".Length..];
+                    targetDiscordId = null;
+                }
+
+                _donateForOverride.Remove(message.Author.Id);
+            }
+
+            Member? member;
+
+            if (targetNameOverride != null)
+            {
+                var all = await _memberService.GetAllMembersAsync();
+                member = all.FirstOrDefault(m =>
+                    m.IngameName.Equals(targetNameOverride, StringComparison.OrdinalIgnoreCase));
+            }
+            else
+            {
+                member = await _memberService.GetMemberByDiscordIdAsync(targetDiscordId!);
+            }
 
             if (member == null)
             {
                 await message.Channel.SendMessageAsync(embed:
-                    EmbedHelper.Error("You are not registered."));
+                    EmbedHelper.Error("Target member was not found or is not registered."));
                 return;
             }
 
+            // ── Mode check ────────────────────────────────────────────
             if (!_submissionMode.TryGetValue(message.Author.Id, out string mode))
             {
                 await message.Channel.SendMessageAsync(embed:
-                    EmbedHelper.Warning("Use **gold** or **bracelet** first."));
+                    EmbedHelper.Warning("Use **gold** or **bracelet** first, then upload."));
                 return;
             }
 
+            // ── OCR ───────────────────────────────────────────────────
             int bestValue = 0;
 
             foreach (var att in message.Attachments)
@@ -378,8 +656,8 @@ namespace TribeBot.Bot.Handlers
 
                 string tmp = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.png");
 
-                using var client = new HttpClient();
-                var data = await client.GetByteArrayAsync(att.Url);
+                using var http = new HttpClient();
+                var data = await http.GetByteArrayAsync(att.Url);
                 await File.WriteAllBytesAsync(tmp, data);
 
                 int value = 0;
@@ -404,17 +682,18 @@ namespace TribeBot.Bot.Handlers
             {
                 await message.AddReactionAsync(new Emoji("❌"));
                 await message.Channel.SendMessageAsync(embed:
-                    EmbedHelper.Error("Could not detect valid value."));
+                    EmbedHelper.Error("Could not detect a valid value from the screenshot."));
                 return;
             }
 
+            // ── Threshold checks + registration ──────────────────────
             if (mode == "gold")
             {
-                if (bestValue < 75_000_000)
+                if (bestValue < 5_000_000)
                 {
                     await message.AddReactionAsync(new Emoji("❌"));
                     await message.Channel.SendMessageAsync(embed:
-                        EmbedHelper.Error("Requirement not met (≥ 75M gold)."));
+                        EmbedHelper.Error($"Requirement not met (≥ {GoldRequirement} gold)."));
                     return;
                 }
 
@@ -422,15 +701,19 @@ namespace TribeBot.Bot.Handlers
 
                 await message.AddReactionAsync(new Emoji("💰"));
                 await message.Channel.SendMessageAsync(embed:
-                    EmbedHelper.Success("💰 Gold contribution recorded."));
+                    EmbedHelper.Success(
+                        uploaderDiscordId != member.DiscordUserId
+                            ? $"💰 Gold contribution recorded for **{member.IngameName}**."
+                            : "💰 Gold contribution recorded."
+                    ));
             }
             else
             {
-                if (bestValue < 1000)
+                if (bestValue < BraceletRequirement)
                 {
                     await message.AddReactionAsync(new Emoji("❌"));
                     await message.Channel.SendMessageAsync(embed:
-                        EmbedHelper.Error("Requirement not met (≥ 1000 bracelets)."));
+                        EmbedHelper.Error($"Requirement not met (≥ {BraceletRequirement} bracelets)."));
                     return;
                 }
 
@@ -438,7 +721,11 @@ namespace TribeBot.Bot.Handlers
 
                 await message.AddReactionAsync(new Emoji("🟢"));
                 await message.Channel.SendMessageAsync(embed:
-                    EmbedHelper.Success("📿 Bracelet contribution recorded."));
+                    EmbedHelper.Success(
+                        uploaderDiscordId != member.DiscordUserId
+                            ? $"📿 Bracelet contribution recorded for **{member.IngameName}**."
+                            : "📿 Bracelet contribution recorded."
+                    ));
             }
 
             _submissionMode.Remove(message.Author.Id);

@@ -21,6 +21,9 @@ namespace TribeBot.Data.Interfaces
         // Create or update a member record
         Task SaveMemberAsync(Member member);
 
+        // Remove all farms associated with a user (used when removing a member)
+        Task RemoveFarmsForUserAsync(string discordUserId);
+
         // Remove a member using their Discord user ID
         Task<bool> RemoveMemberByDiscordIdAsync(string discordId);
 

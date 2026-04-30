@@ -283,10 +283,7 @@ namespace TribeBot.Bot.Handlers
 
             // 2️⃣ Remove all farms owned by the member
             var farms = await _farmService.GetFarmsForUserAsync(discordId);
-            foreach (var farm in farms)
-            {
-                await _farmService.RemoveFarmAsync(farm.FarmId, discordId);
-            }
+            await _farmService.RemoveFarmsForUserAsync(discordId);
 
             // 3️⃣ Remove the member record
             bool success = await _dataStore.RemoveMemberByDiscordIdAsync(discordId);
