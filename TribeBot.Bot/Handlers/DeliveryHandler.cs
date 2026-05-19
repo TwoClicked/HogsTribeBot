@@ -199,6 +199,10 @@ namespace TribeBot.Bot.Handlers
             var guild = guildChannel.Guild;
             var allMembers = await _memberService.GetAllMembersAsync();
 
+            // Fetch ALL guild members from the API, not just the cache
+            var guildUsers = (await guild.GetUsersAsync().FlattenAsync())
+                .ToDictionary(u => u.Id);
+
             int sent = 0;
             List<string> failures = new();
 
@@ -210,8 +214,7 @@ namespace TribeBot.Bot.Handlers
                     continue;
                 }
 
-                var user = guild.GetUser(uid);
-                if (user == null)
+                if (!guildUsers.TryGetValue(uid, out var user))
                 {
                     failures.Add($"{member.IngameName} — user not found");
                     continue;
@@ -232,33 +235,15 @@ namespace TribeBot.Bot.Handlers
                     );
 
                     sent++;
-                    await Task.Delay(1200); // avoid Discord rate limits
+                    await Task.Delay(1200);
                 }
                 catch
                 {
                     failures.Add($"{member.IngameName} — DM failed");
                 }
             }
-
-            if (guildChannel is IMessageChannel channel)
-            {
-                await channel.SendMessageAsync(embed:
-                    EmbedHelper.Info("📬 Start Notification Summary",
-                        $"• Total Members: **{allMembers.Count()}**\n" +
-                        $"• DMs Sent: **{sent}**\n" +
-                        $"• Failed: **{failures.Count}**"
-                    ));
-            }
-
-            if (failures.Any())
-            {
-                await OfficerLog?.SendMessageAsync(embed:
-                    EmbedHelper.Warning(
-                        $"⚠️ **Delivery Start DM Failures**\n\n" +
-                        string.Join("\n", failures)
-                    ));
-            }
         }
+
 
         // ============================================================
         // END EVENT
