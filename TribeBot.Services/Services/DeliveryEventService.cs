@@ -175,7 +175,7 @@ public class DeliveryEventService : IDeliveryEventService
         {
             await _fineService.AddEventFineAsync(
                 m,
-                150_000_000,
+                200_000_000,
                 $"Missed Delivery Event ({eventId})"
             );
         }
