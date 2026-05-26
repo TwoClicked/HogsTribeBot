@@ -10,30 +10,23 @@ ocr = PaddleOCR(use_textline_orientation=True, lang='en')
 @app.route('/ocr', methods=['POST'])
 def run_ocr():
     try:
-        # Accepts either a URL or raw image bytes
         image_url = request.json.get('image_url') if request.is_json else None
 
-        if image_url:
-            response = requests.get(image_url)
-            suffix = '.png'
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
-                f.write(response.content)
-                tmp_path = f.name
-        else:
+        if not image_url:
             return jsonify({'error': 'No image_url provided'}), 400
 
-        result = ocr.ocr(tmp_path, cls=True)
+        response = requests.get(image_url)
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as f:
+            f.write(response.content)
+            tmp_path = f.name
+
+        result = ocr.predict(tmp_path)
         os.unlink(tmp_path)
 
         blocks = []
-        if result and result[0]:
-            for line in result[0]:
-                box, (text, confidence) = line
-                blocks.append({
-                    'text': text,
-                    'confidence': round(confidence, 4),
-                    'box': box
-                })
+        for res in result:
+            for item in res['rec_texts'] if 'rec_texts' in res else []:
+                blocks.append({'text': item, 'confidence': 1.0, 'box': [[0,0]]})
 
         return jsonify({'data': blocks})
 
