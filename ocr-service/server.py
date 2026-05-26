@@ -23,6 +23,9 @@ def run_ocr():
         result = ocr.predict(tmp_path)
         os.unlink(tmp_path)
 
+        # DEBUG - remove after testing
+        print("OCR RAW RESULT:", result)
+
         blocks = []
         for res in result:
             for item in res['rec_texts'] if 'rec_texts' in res else []:
@@ -31,6 +34,7 @@ def run_ocr():
         return jsonify({'data': blocks})
 
     except Exception as e:
+        print("OCR ERROR:", str(e))
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
