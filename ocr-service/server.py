@@ -5,7 +5,7 @@ import os
 import requests
 
 app = Flask(__name__)
-ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+ocr = PaddleOCR(use_textline_orientation=True, lang='en')
 
 @app.route('/ocr', methods=['POST'])
 def run_ocr():
