@@ -32,8 +32,6 @@ namespace TribeBot.Services.Services
             var response = await _http.PostAsync(OcrUrl, content);
             var json = await response.Content.ReadAsStringAsync();
 
-            Console.WriteLine($"OCR RAW JSON: {json[..Math.Min(json.Length, 300)]}");
-
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("data", out var data))
                 return new();
@@ -57,7 +55,7 @@ namespace TribeBot.Services.Services
                         }
                     }
                 }
-                catch { /* ignore box parse errors, text still usable */ }
+                catch { }
 
                 blocks.Add((text, x, y));
             }
@@ -123,6 +121,46 @@ namespace TribeBot.Services.Services
 
                 Console.WriteLine("---- FULL OCR TEXT ----");
                 Console.WriteLine(allText);
+
+                // Date detection
+                LastDetectedDonationDateUtc = null;
+
+                string fixedText = Regex.Replace(allText,
+                    @"(\d{2})[./](\d{2})(\d{2}:\d{2}:\d{2})",
+                    "$1/$2 $3");
+
+                var datePatterns = new[]
+                {
+                    @"(\d{2})[./](\d{2})\s+(\d{2}:\d{2}:\d{2})",
+                };
+
+                foreach (var pattern in datePatterns)
+                {
+                    var dateMatch = Regex.Match(fixedText, pattern);
+                    if (dateMatch.Success)
+                    {
+                        try
+                        {
+                            int month = int.Parse(dateMatch.Groups[1].Value);
+                            int day = int.Parse(dateMatch.Groups[2].Value);
+                            var timeParts = dateMatch.Groups[3].Value.Split(':');
+                            int hour = int.Parse(timeParts[0]);
+                            int minute = int.Parse(timeParts[1]);
+                            int second = int.Parse(timeParts[2]);
+                            int year = DateTime.UtcNow.Year;
+
+                            var detected = new DateTime(year, month, day, hour, minute, second, DateTimeKind.Utc);
+
+                            if (detected > DateTime.UtcNow.AddDays(1))
+                                detected = detected.AddYears(-1);
+
+                            LastDetectedDonationDateUtc = detected;
+                            Console.WriteLine($"📅 Detected date: {detected}");
+                            break;
+                        }
+                        catch { }
+                    }
+                }
 
                 int total = 0;
                 var amountMatches = Regex.Matches(allText,
