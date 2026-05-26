@@ -32,6 +32,8 @@ namespace TribeBot.Services.Services
             var response = await _http.PostAsync(OcrUrl, content);
             var json = await response.Content.ReadAsStringAsync();
 
+            Console.WriteLine($"OCR RAW JSON: {json[..Math.Min(json.Length, 300)]}");
+
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("data", out var data))
                 return new();
@@ -43,11 +45,19 @@ namespace TribeBot.Services.Services
                 string text = block.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
                 int x = 0, y = 0;
 
-                if (block.TryGetProperty("box", out var box) && box.GetArrayLength() > 0)
+                try
                 {
-                    x = box[0][0].GetInt32();
-                    y = box[0][1].GetInt32();
+                    if (block.TryGetProperty("box", out var box) && box.GetArrayLength() > 0)
+                    {
+                        var firstPoint = box[0];
+                        if (firstPoint.ValueKind == JsonValueKind.Array && firstPoint.GetArrayLength() >= 2)
+                        {
+                            x = (int)firstPoint[0].GetDouble();
+                            y = (int)firstPoint[1].GetDouble();
+                        }
+                    }
                 }
+                catch { /* ignore box parse errors, text still usable */ }
 
                 blocks.Add((text, x, y));
             }
@@ -64,7 +74,6 @@ namespace TribeBot.Services.Services
                 int bestDistance = int.MaxValue;
                 string bestText = "";
 
-                // Find the blue row Y using image directly
                 int targetY = await DetectBlueRowYFromUrlAsync(imageUrl);
 
                 foreach (var (text, x, y) in blocks)
@@ -167,8 +176,9 @@ namespace TribeBot.Services.Services
 
                 return total > 0 ? total : null;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"💥 DELIVERY OCR ERROR: {ex}");
                 return null;
             }
         }
