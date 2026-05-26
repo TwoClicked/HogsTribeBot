@@ -1,11 +1,11 @@
 from flask import Flask, request, jsonify
+from rapidocr_onnxruntime import RapidOCR
 import tempfile
 import os
 import requests
-import traceback
 
 app = Flask(__name__)
-ocr = None
+ocr = RapidOCR()
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -13,15 +13,8 @@ def health():
 
 @app.route('/ocr', methods=['POST'])
 def run_ocr():
-    global ocr
     tmp_path = None
     try:
-        if ocr is None:
-            print("Initializing PaddleOCR...", flush=True)
-            from paddleocr import PaddleOCR
-            ocr = PaddleOCR(use_textline_orientation=True, lang='en')
-            print("PaddleOCR ready.", flush=True)
-
         image_url = request.json.get('image_url') if request.is_json else None
         if not image_url:
             return jsonify({'error': 'No image_url provided'}), 400
@@ -31,26 +24,23 @@ def run_ocr():
             f.write(img_response.content)
             tmp_path = f.name
 
-        print(f"Running OCR on {tmp_path}", flush=True)
-        result = ocr.predict(tmp_path)
-        print(f"OCR done, result type: {type(result)}", flush=True)
-        print(f"OCR result: {result}", flush=True)
+        result, elapse = ocr(tmp_path)
 
         blocks = []
-        for res in result:
-            print(f"RES: {res}", flush=True)
-            texts = res.get('rec_texts', [])
-            boxes = res.get('rec_boxes', [])
-            scores = res.get('rec_scores', [])
-            for i, text in enumerate(texts):
-                box = boxes[i].tolist() if i < len(boxes) else [[0, 0]]
-                score = float(scores[i]) if i < len(scores) else 1.0
-                blocks.append({'text': text, 'confidence': score, 'box': box})
+        if result:
+            for item in result:
+                box, text, score = item
+                blocks.append({
+                    'text': text,
+                    'confidence': float(score),
+                    'box': box
+                })
 
-        print(f"Returning {len(blocks)} blocks", flush=True)
+        print(f"OCR done: {len(blocks)} blocks", flush=True)
         return jsonify({'data': blocks})
 
     except Exception as e:
+        import traceback
         print("OCR ERROR:", traceback.format_exc(), flush=True)
         return jsonify({'error': str(e)}), 500
     finally:
