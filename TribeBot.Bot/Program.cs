@@ -120,9 +120,16 @@ namespace TribeBot.Bot
             services.AddSingleton<IUserFlowManager, UserFlowManager>();
 
             // Google Sheets
-            string credentialsJson = Environment.GetEnvironmentVariable("GOOGLE_CREDENTIALS_JSON")
-                ?? File.ReadAllText(@"C:\Users\diego\source\repos\HogsTribeBot\credentials.json");
-            Console.WriteLine($"CREDS ENV: '{Environment.GetEnvironmentVariable("GOOGLE_CREDENTIALS_JSON")?.Substring(0, 20)}'");
+            string? credentialsJson = Environment.GetEnvironmentVariable("GOOGLE_CREDENTIALS_JSON");
+            if (string.IsNullOrWhiteSpace(credentialsJson))
+            {
+                Console.WriteLine("GOOGLE_CREDENTIALS_JSON not set, falling back to local file.");
+                credentialsJson = File.ReadAllText(@"C:\Users\diego\source\repos\HogsTribeBot\credentials.json");
+            }
+            else
+            {
+                Console.WriteLine($"GOOGLE_CREDENTIALS_JSON loaded from env, length={credentialsJson.Length}");
+            }
 
             string spreadsheetId = Environment.GetEnvironmentVariable("SHEETS_SPREADSHEET_ID")
                 ?? "1O_bpIDhAApw00-yj6uwKt1KPPrswc0w6tyejmwSS-Xk";
