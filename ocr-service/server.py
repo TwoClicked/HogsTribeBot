@@ -5,7 +5,13 @@ import os
 import requests
 
 app = Flask(__name__)
-ocr = PaddleOCR(use_textline_orientation=True, lang='en')
+ocr = None
+
+def get_ocr():
+    global ocr
+    if ocr is None:
+        ocr = PaddleOCR(use_textline_orientation=True, lang='en')
+    return ocr
 
 @app.route('/ocr', methods=['POST'])
 def run_ocr():
@@ -21,23 +27,23 @@ def run_ocr():
             f.write(response.content)
             tmp_path = f.name
 
-        result = ocr.predict(tmp_path)
-
-        print("OCR RAW TYPE:", type(result))
-        print("OCR RAW RESULT:", result)
+        result = get_ocr().predict(tmp_path)
 
         blocks = []
-        for i, res in enumerate(result):
-            print(f"ITEM {i} TYPE:", type(res))
-            print(f"ITEM {i} KEYS:", res.keys() if hasattr(res, 'keys') else dir(res))
-            print(f"ITEM {i}:", res)
+        for res in result:
+            texts = res.get('rec_texts', [])
+            boxes = res.get('rec_boxes', [])
+            scores = res.get('rec_scores', [])
+            for i, text in enumerate(texts):
+                box = boxes[i].tolist() if i < len(boxes) else [[0, 0]]
+                score = float(scores[i]) if i < len(scores) else 1.0
+                blocks.append({'text': text, 'confidence': score, 'box': box})
 
         return jsonify({'data': blocks})
 
     except Exception as e:
         import traceback
-        print("OCR ERROR:", str(e))
-        print(traceback.format_exc())
+        print("OCR ERROR:", traceback.format_exc())
         return jsonify({'error': str(e)}), 500
     finally:
         if tmp_path and os.path.exists(tmp_path):
