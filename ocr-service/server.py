@@ -37,6 +37,7 @@ def run_ocr():
                 })
 
         print(f"OCR done: {len(blocks)} blocks", flush=True)
+        print(f"BLOCKS: {[b['text'] for b in blocks]}", flush=True)
         return jsonify({'data': blocks})
 
     except Exception as e:
