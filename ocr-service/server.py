@@ -9,6 +9,7 @@ ocr = PaddleOCR(use_textline_orientation=True, lang='en')
 
 @app.route('/ocr', methods=['POST'])
 def run_ocr():
+    tmp_path = None
     try:
         image_url = request.json.get('image_url') if request.is_json else None
 
@@ -21,21 +22,26 @@ def run_ocr():
             tmp_path = f.name
 
         result = ocr.predict(tmp_path)
-        os.unlink(tmp_path)
 
-        # DEBUG - remove after testing
+        print("OCR RAW TYPE:", type(result))
         print("OCR RAW RESULT:", result)
 
         blocks = []
-        for res in result:
-            for item in res['rec_texts'] if 'rec_texts' in res else []:
-                blocks.append({'text': item, 'confidence': 1.0, 'box': [[0,0]]})
+        for i, res in enumerate(result):
+            print(f"ITEM {i} TYPE:", type(res))
+            print(f"ITEM {i} KEYS:", res.keys() if hasattr(res, 'keys') else dir(res))
+            print(f"ITEM {i}:", res)
 
         return jsonify({'data': blocks})
 
     except Exception as e:
+        import traceback
         print("OCR ERROR:", str(e))
+        print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 23333))
