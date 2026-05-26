@@ -10,6 +10,7 @@ using TribeBot.Bot.Services;
 using TribeBot.Core.Flows;
 using TribeBot.Core.Flows.Interfaces;
 using TribeBot.Core.Interfaces;
+using System.IO;
 using TribeBot.Data.GoogleSheets;
 using TribeBot.Data.Interfaces;
 using TribeBot.Services;
@@ -121,6 +122,7 @@ namespace TribeBot.Bot
             // Google Sheets
             string credentialsJson = Environment.GetEnvironmentVariable("GOOGLE_CREDENTIALS_JSON")
                 ?? File.ReadAllText(@"C:\Users\diego\source\repos\HogsTribeBot\credentials.json");
+            Console.WriteLine($"CREDS ENV: '{Environment.GetEnvironmentVariable("GOOGLE_CREDENTIALS_JSON")?.Substring(0, 20)}'");
 
             string spreadsheetId = Environment.GetEnvironmentVariable("SHEETS_SPREADSHEET_ID")
                 ?? "1O_bpIDhAApw00-yj6uwKt1KPPrswc0w6tyejmwSS-Xk";
