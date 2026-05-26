@@ -118,14 +118,21 @@ namespace TribeBot.Bot
         {
             services.AddSingleton<IUserFlowManager, UserFlowManager>();
 
-            services.AddSingleton<IGoogleSheetsDataStore>(provider =>
-                new GoogleSheetsDataStore(
-                    @"C:\Users\diego\source\repos\HogsTribeBot\credentials.json",
-                    "1O_bpIDhAApw00-yj6uwKt1KPPrswc0w6tyejmwSS-Xk"
-                ));
+            // Google Sheets
+            string credentialsJson = Environment.GetEnvironmentVariable("GOOGLE_CREDENTIALS_JSON")
+                ?? File.ReadAllText(@"C:\Users\diego\source\repos\HogsTribeBot\credentials.json");
 
-            services.AddSingleton(new PaddleOcrServerService(
-                @"C:\PaddleOCR\PaddleOCR-json_v1.4.1\PaddleOCR-json.exe"));
+            string spreadsheetId = Environment.GetEnvironmentVariable("SHEETS_SPREADSHEET_ID")
+                ?? "1O_bpIDhAApw00-yj6uwKt1KPPrswc0w6tyejmwSS-Xk";
+
+            services.AddSingleton<IGoogleSheetsDataStore>(provider =>
+                new GoogleSheetsDataStore(credentialsJson, spreadsheetId));
+
+            // OCR — uses env var host so it works both locally and on Railway
+            string ocrHost = Environment.GetEnvironmentVariable("OCR_HOST") ?? "127.0.0.1";
+            int ocrPort = int.TryParse(Environment.GetEnvironmentVariable("OCR_PORT"), out var p) ? p : 23333;
+
+            services.AddSingleton(new PaddleOcrServerService(ocrHost, ocrPort));
 
             services.AddSingleton<IMemberService, MemberService>();
             services.AddSingleton<IDonationService, DonationService>();

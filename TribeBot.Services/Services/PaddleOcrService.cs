@@ -1,129 +1,78 @@
-﻿using SixLabors.ImageSharp.PixelFormats;
-using System.Diagnostics;
-using System.Globalization;
-using System.Net.Sockets;
+﻿using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Globalization;
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;   // (needed for Mutate if used)
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace TribeBot.Services.Services
 {
     public class PaddleOcrServerService
     {
-        private readonly string _exePath;
-        private readonly string _serverHost = "127.0.0.1";
-        private readonly int _serverPort = 23333;
-        private Process? _server;
+        private readonly string _serverHost;
+        private readonly int _serverPort;
+        private readonly HttpClient _http = new();
 
         public DateTime? LastDetectedDonationDateUtc { get; private set; }
 
-        public PaddleOcrServerService(string exePath)
+        public PaddleOcrServerService(string host, int port)
         {
-            _exePath = exePath;
-            StartOcrServer();
+            _serverHost = host;
+            _serverPort = port;
         }
 
-        private void StartOcrServer()
+        private string OcrUrl => $"http://{_serverHost}:{_serverPort}/ocr";
+
+        private async Task<List<(string text, int x, int y)>> GetBlocksAsync(string imageUrl)
         {
-            try
-            {
-                string workDir = Path.GetDirectoryName(_exePath)!;
+            var payload = JsonSerializer.Serialize(new { image_url = imageUrl });
+            var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-                var psi = new ProcessStartInfo
+            var response = await _http.PostAsync(OcrUrl, content);
+            var json = await response.Content.ReadAsStringAsync();
+
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("data", out var data))
+                return new();
+
+            var blocks = new List<(string text, int x, int y)>();
+
+            foreach (var block in data.EnumerateArray())
+            {
+                string text = block.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
+                int x = 0, y = 0;
+
+                if (block.TryGetProperty("box", out var box) && box.GetArrayLength() > 0)
                 {
-                    FileName = _exePath,
-                    Arguments = "-addr=loopback -port=23333",
-                    WorkingDirectory = workDir,
-                    CreateNoWindow = true,
-                    UseShellExecute = false
-                };
-
-                _server = Process.Start(psi);
-                Console.WriteLine("✅ OCR server started.");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("💥 ERROR STARTING OCR SERVER");
-                Console.WriteLine(ex);
-            }
-        }
-
-        public async Task<string> ExtractRawTextAsync(string imagePath)
-        {
-            try
-            {
-                if (!File.Exists(imagePath))
-                    return "";
-
-                string requestJson =
-                    $"{{\"image_path\":\"{imagePath.Replace("\\", "\\\\")}\"}}";
-
-                using var client = new TcpClient();
-                await client.ConnectAsync(_serverHost, _serverPort);
-
-                using var stream = client.GetStream();
-                using var writer = new StreamWriter(stream, Encoding.UTF8);
-                using var reader = new StreamReader(stream, Encoding.UTF8);
-
-                await writer.WriteLineAsync(requestJson);
-                await writer.FlushAsync();
-
-                string? response = await reader.ReadLineAsync();
-
-                if (string.IsNullOrWhiteSpace(response))
-                    return "";
-
-                Console.WriteLine("OCR RAW JSON:");
-                Console.WriteLine(response);
-
-                using JsonDocument doc = JsonDocument.Parse(response);
-
-                if (!doc.RootElement.TryGetProperty("data", out var dataElement))
-                    return "";
-
-                if (dataElement.ValueKind != JsonValueKind.Array)
-                {
-                    if (dataElement.ValueKind == JsonValueKind.String)
-                        return dataElement.GetString() ?? "";
-
-                    return "";
+                    x = box[0][0].GetInt32();
+                    y = box[0][1].GetInt32();
                 }
 
-                // 🔥 STEP 1 — detect BLUE row
-                int targetY = DetectBlueRowY(imagePath);
+                blocks.Add((text, x, y));
+            }
+
+            return blocks;
+        }
+
+        public async Task<string> ExtractRawTextAsync(string imageUrl)
+        {
+            try
+            {
+                var blocks = await GetBlocksAsync(imageUrl);
 
                 int bestDistance = int.MaxValue;
                 string bestText = "";
 
-                foreach (var block in dataElement.EnumerateArray())
+                // Find the blue row Y using image directly
+                int targetY = await DetectBlueRowYFromUrlAsync(imageUrl);
+
+                foreach (var (text, x, y) in blocks)
                 {
-                    if (!block.TryGetProperty("text", out var textProp))
-                        continue;
+                    if (!Regex.IsMatch(text, @"\d")) continue;
+                    if (x < 400) continue;
 
-                    if (!block.TryGetProperty("box", out var boxProp))
-                        continue;
-
-                    string text = textProp.GetString() ?? "";
-
-                    if (!Regex.IsMatch(text, @"\d"))
-                        continue;
-
-                    int y = boxProp[0][1].GetInt32();
-                    int x = boxProp[0][0].GetInt32();
-
-                    // 🔥 optional safety: only right side (scores)
-                    if (x < 400)
-                        continue;
-
-                    int distance = targetY != -1
-                        ? Math.Abs(y - targetY)
-                        : int.MaxValue;
-
-                    // fallback if blue not detected
-                    if (targetY == -1)
-                        distance = -y; // simulate "take lowest"
+                    int distance = targetY != -1 ? Math.Abs(y - targetY) : int.MaxValue;
 
                     if (distance < bestDistance)
                     {
@@ -132,85 +81,86 @@ namespace TribeBot.Services.Services
                     }
                 }
 
-                if (string.IsNullOrWhiteSpace(bestText))
-                    return "";
-
-                bestText = bestText
-                    .Replace(",", "")
-                    .Replace(".", "")
-                    .Replace("O", "0")
-                    .Replace("o", "0")
-                    .Replace("l", "1")
-                    .Replace("I", "1")
+                return bestText
+                    .Replace(",", "").Replace(".", "")
+                    .Replace("O", "0").Replace("o", "0")
+                    .Replace("l", "1").Replace("I", "1")
                     .Trim();
-
-                return bestText;
             }
             catch (Exception ex)
             {
-                Console.WriteLine("OCR RAW ERROR:");
-                Console.WriteLine(ex);
+                Console.WriteLine($"OCR RAW ERROR: {ex}");
                 return "";
             }
         }
 
-        public async Task<int?> ExtractDeliveryDonationAmountAsync(string imagePath)
+        public async Task<int?> ExtractDonationAmountAsync(string imageUrl)
         {
             try
             {
-                if (!File.Exists(imagePath))
-                    return null;
+                Console.WriteLine("📸 OCR START");
 
-                string requestJson =
-                    $"{{\"image_path\":\"{imagePath.Replace("\\", "\\\\")}\"}}";
+                var blocks = await GetBlocksAsync(imageUrl);
 
-                using var client = new TcpClient();
-                await client.ConnectAsync(_serverHost, _serverPort);
+                var sb = new StringBuilder();
+                foreach (var (text, _, _) in blocks)
+                    sb.Append(" ").Append(text);
 
-                using var stream = client.GetStream();
-                using var writer = new StreamWriter(stream, Encoding.UTF8);
-                using var reader = new StreamReader(stream, Encoding.UTF8);
+                string allText = sb.ToString()
+                    .Replace('：', ':').Replace('／', '/').Replace(';', ':');
 
-                await writer.WriteLineAsync(requestJson);
-                await writer.FlushAsync();
+                allText = Regex.Replace(allText,
+                    @"(\d{2})[./,](\d{2})(\d{2}:\d{2}:\d{2})", "$1.$2 $3");
 
-                string? response = await reader.ReadLineAsync();
-
-                if (string.IsNullOrWhiteSpace(response))
-                    return null;
-
-                using JsonDocument doc = JsonDocument.Parse(response);
-
-                if (!doc.RootElement.TryGetProperty("data", out var dataElement))
-                    return null;
-
-                if (dataElement.ValueKind != JsonValueKind.Array)
-                    return null;
+                Console.WriteLine("---- FULL OCR TEXT ----");
+                Console.WriteLine(allText);
 
                 int total = 0;
+                var amountMatches = Regex.Matches(allText,
+                    @"(\d+[.,]\d+|\d+)\s*[Mm]", RegexOptions.IgnoreCase);
 
-                foreach (var block in dataElement.EnumerateArray())
+                foreach (Match match in amountMatches)
                 {
-                    if (!block.TryGetProperty("text", out var textProp))
-                        continue;
+                    string num = match.Groups[1].Value.Replace(",", ".");
+                    if (double.TryParse(num, NumberStyles.Any,
+                        CultureInfo.InvariantCulture, out double millions))
+                    {
+                        if (millions >= 0.1 && millions <= 50.0)
+                        {
+                            int value = Convert.ToInt32(Math.Round(millions * 1_000_000));
+                            total += value;
+                            Console.WriteLine($"💰 Detected: {millions}M -> {value}");
+                        }
+                    }
+                }
 
-                    string text = textProp.GetString() ?? "";
+                return total > 0 ? total : null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"💥 OCR ERROR: {ex}");
+                return null;
+            }
+        }
 
+        public async Task<int?> ExtractDeliveryDonationAmountAsync(string imageUrl)
+        {
+            try
+            {
+                var blocks = await GetBlocksAsync(imageUrl);
+                int total = 0;
+
+                foreach (var (text, _, _) in blocks)
+                {
                     var matches = Regex.Matches(text, @"(\d+[.,]\d+|\d+)\s*[Mm]");
-
                     foreach (Match match in matches)
                     {
                         string num = match.Groups[1].Value.Replace(",", ".");
-
-                        if (double.TryParse(num,
-                            NumberStyles.Any,
-                            CultureInfo.InvariantCulture,
-                            out double millions))
+                        if (double.TryParse(num, NumberStyles.Any,
+                            CultureInfo.InvariantCulture, out double millions))
                         {
                             if (millions >= 0.1 && millions <= 50)
-                            {
                                 total += (int)Math.Round(millions * 1_000_000);
-                            }
                         }
                     }
                 }
@@ -223,261 +173,41 @@ namespace TribeBot.Services.Services
             }
         }
 
-        //Filter out the possible ranks, 
         public int ExtractMaxNumber(string text)
         {
             var matches = Regex.Matches(text, @"\d{1,3}(?:,\d{3})*|\d+");
-
             var numbers = matches
                 .Select(m => int.Parse(m.Value.Replace(",", "")))
                 .Where(n => n >= 200 && n <= 100000)
                 .ToList();
-
             return numbers.Any() ? numbers.Max() : 0;
         }
 
-
-
-        public async Task<int?> ExtractDonationAmountAsync(string imagePath)
+        private async Task<int> DetectBlueRowYFromUrlAsync(string imageUrl)
         {
             try
             {
-                Console.WriteLine("=================================================");
-                Console.WriteLine("📸 OCR START");
-                Console.WriteLine($"Image: {imagePath}");
-                Console.WriteLine("=================================================");
+                var bytes = await _http.GetByteArrayAsync(imageUrl);
+                using var image = Image.Load<Rgba32>(bytes);
 
-                if (!File.Exists(imagePath))
+                int bestY = -1;
+                int bestScore = 0;
+
+                for (int y = 0; y < image.Height; y++)
                 {
-                    Console.WriteLine("❌ Image file does not exist.");
-                    return null;
-                }
-
-                string requestJson =
-                    $"{{\"image_path\":\"{imagePath.Replace("\\", "\\\\")}\"}}";
-
-                using var client = new TcpClient();
-                client.Connect(_serverHost, _serverPort);
-
-                using var stream = client.GetStream();
-                using var writer = new StreamWriter(stream, Encoding.UTF8);
-                using var reader = new StreamReader(stream, Encoding.UTF8);
-
-                await writer.WriteLineAsync(requestJson);
-                await writer.FlushAsync();
-
-                string? response = await reader.ReadLineAsync();
-
-                if (string.IsNullOrWhiteSpace(response))
-                {
-                    Console.WriteLine("❌ OCR returned empty response.");
-                    return null;
-                }
-
-                JsonDocument doc = JsonDocument.Parse(response);
-
-                if (!doc.RootElement.TryGetProperty("data", out var dataArray))
-                {
-                    Console.WriteLine("❌ OCR JSON missing 'data' property.");
-                    return null;
-                }
-
-                // ======================================================
-                // COMBINE OCR TEXT
-                // ======================================================
-
-                var sb = new StringBuilder();
-
-                foreach (var block in dataArray.EnumerateArray())
-                {
-                    if (block.TryGetProperty("text", out var textProp))
-                        sb.Append(" ").Append(textProp.GetString());
-                }
-
-                string allText = sb.ToString()
-                    .Replace('：', ':')
-                    .Replace('／', '/')
-                    .Replace(';', ':');
-
-                // Fix merged date/time (02.2513:30:55 -> 02.25 13:30:55)
-                allText = Regex.Replace(
-                    allText,
-                    @"(\d{2})[./,](\d{2})(\d{2}:\d{2}:\d{2})",
-                    "$1.$2 $3");
-
-                Console.WriteLine("---- FULL OCR TEXT ----");
-                Console.WriteLine(allText);
-                Console.WriteLine("------------------------");
-
-                // ======================================================
-                // DATE DETECTION (OCR TOLERANT)
-                // Requires number before % or x
-                // Accepts / . ,
-                // ======================================================
-
-                DateTime? detectedDateUtc = null;
-
-                var dateMatches = Regex.Matches(
-                    allText,
-                    @"\d+[.,]?\d*\s*(?:%|x)\s*(\d{2})[./,](\d{2})\s*(\d{2}):(\d{2}):(\d{2})",
-                    RegexOptions.IgnoreCase);
-
-                Console.WriteLine($"🔎 Found {dateMatches.Count} percent+date matches.");
-
-                for (int i = 0; i < dateMatches.Count; i++)
-                    Console.WriteLine($"Match {i}: {dateMatches[i].Value}");
-
-                if (dateMatches.Count > 0)
-                {
-                    var match = dateMatches[0]; // newest row
-
-                    int month = int.Parse(match.Groups[1].Value);
-                    int day = int.Parse(match.Groups[2].Value);
-                    int hour = int.Parse(match.Groups[3].Value);
-                    int minute = int.Parse(match.Groups[4].Value);
-                    int second = int.Parse(match.Groups[5].Value);
-
-                    Console.WriteLine("📅 Using first detected row date:");
-                    Console.WriteLine($"Month={month} Day={day} Time={hour}:{minute}:{second}");
-
-                    TryBuildDate(
-                        DateTime.UtcNow.Year,
-                        month,
-                        day,
-                        hour,
-                        minute,
-                        second,
-                        ref detectedDateUtc);
-                }
-                else
-                {
-                    Console.WriteLine("⚠ No transport dates detected.");
-                }
-
-                LastDetectedDonationDateUtc = detectedDateUtc;
-
-                Console.WriteLine($"🕒 Final Parsed Date (UTC): {detectedDateUtc}");
-
-                // ======================================================
-                // DONATION AMOUNT PARSING
-                // =====================================================
-
-                int total = 0;
-
-                foreach (var block in dataArray.EnumerateArray())
-                {
-                    if (!block.TryGetProperty("text", out var textProp))
-                        continue;
-
-                    string text = textProp.GetString() ?? "";
-
-                    var amountMatches = Regex.Matches(
-                        text,
-                        @"(\d+[.,]\d+|\d+)\s*[Mm]",
-                        RegexOptions.IgnoreCase);
-
-                    foreach (Match match in amountMatches)
+                    int bluePixels = 0;
+                    for (int x = 0; x < image.Width; x++)
                     {
-                        string num = match.Groups[1].Value.Replace(",", ".");
-
-                        if (double.TryParse(
-                            num,
-                            System.Globalization.NumberStyles.Any,
-                            System.Globalization.CultureInfo.InvariantCulture,
-                            out double millions))
-                        {
-                            if (millions >= 0.1 && millions <= 50.0)
-                            {
-                                int value = Convert.ToInt32(
-                                    Math.Round(millions * 1_000_000));
-
-                                total += value;
-
-                                Console.WriteLine($"💰 Detected donation: {millions}M -> {value}");
-                            }
-                        }
+                        var pixel = image[x, y];
+                        if (pixel.B > 140 && pixel.R < 120 && pixel.G < 140)
+                            bluePixels++;
                     }
+                    if (bluePixels > bestScore) { bestScore = bluePixels; bestY = y; }
                 }
 
-                Console.WriteLine("---- FINAL OCR RESULT ----");
-                Console.WriteLine($"Date UTC: {detectedDateUtc}");
-                Console.WriteLine($"Total: {total}");
-                Console.WriteLine("---------------------------");
-
-                return total > 0 ? total : null;
+                return bestY;
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine("💥 OCR ERROR:");
-                Console.WriteLine(ex);
-                return null;
-            }
-        }
-        private int DetectBlueRowY(string path)
-        {
-            using var image = Image.Load<Rgba32>(path);
-
-            int bestY = -1;
-            int bestScore = 0;
-
-            for (int y = 0; y < image.Height; y++)
-            {
-                int bluePixels = 0;
-
-                for (int x = 0; x < image.Width; x++)
-                {
-                    var pixel = image[x, y];
-
-                    if (pixel.B > 140 && pixel.R < 120 && pixel.G < 140)
-                        bluePixels++;
-                }
-
-                if (bluePixels > bestScore)
-                {
-                    bestScore = bluePixels;
-                    bestY = y;
-                }
-            }
-
-            return bestY;
-        }
-        private void TryBuildDate(
-            int year,
-            int month,
-            int day,
-            int hour,
-            int minute,
-            int second,
-            ref DateTime? detectedDateUtc)
-        {
-            try
-            {
-                var parsed = new DateTime(
-                    year,
-                    month,
-                    day,
-                    hour,
-                    minute,
-                    second,
-                    DateTimeKind.Utc);
-
-                Console.WriteLine($"🧪 Built DateTime: {parsed}");
-
-                if (parsed <= DateTime.UtcNow.AddMinutes(5))
-                {
-                    detectedDateUtc = parsed;
-                    Console.WriteLine("✅ Date accepted.");
-                }
-                else
-                {
-                    Console.WriteLine("⚠ Date rejected (future > 5 min).");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("❌ Date build failed:");
-                Console.WriteLine(ex.Message);
-            }
+            catch { return -1; }
         }
     }
 }

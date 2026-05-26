@@ -1,11 +1,5 @@
 ﻿using Discord;
 using Discord.WebSocket;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
-using System.Threading.Tasks;
 using TribeBot.Bot.UI;
 using TribeBot.Core.Entities;
 using TribeBot.Core.Interfaces;
@@ -466,16 +460,7 @@ namespace TribeBot.Bot.Handlers
                     !attachment.ContentType.StartsWith("image"))
                     continue;
 
-                string tmp = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.png");
-
-                using (var client = new HttpClient())
-                {
-                    var data = await client.GetByteArrayAsync(attachment.Url);
-                    await File.WriteAllBytesAsync(tmp, data);
-                }
-
-                int? amount = await _ocrService.ExtractDonationAmountAsync(tmp);
-                File.Delete(tmp);
+                int? amount = await _ocrService.ExtractDonationAmountAsync(attachment.Url);
 
                 if (amount.HasValue)
                     total += amount.Value;

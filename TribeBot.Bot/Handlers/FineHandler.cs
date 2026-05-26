@@ -1,12 +1,5 @@
 ﻿using Discord;
 using Discord.WebSocket;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
-using System.Threading.Tasks;
-using TribeBot.Core.Entities;
 using TribeBot.Core.Interfaces;
 using TribeBot.Services.Services;
 using TribeBot.Bot.UI; // IMPORTANT: For EmbedHelper
@@ -451,15 +444,7 @@ namespace TribeBot.Bot.Handlers
                 if (att.ContentType == null || !att.ContentType.StartsWith("image"))
                     continue;
 
-                string tmp = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.png");
-
-                using (var client = new HttpClient())
-                {
-                    var data = await client.GetByteArrayAsync(att.Url);
-                    await File.WriteAllBytesAsync(tmp, data);
-                }
-                int? amt = await _ocrService.ExtractDeliveryDonationAmountAsync(tmp);
-                File.Delete(tmp);
+                int? amt = await _ocrService.ExtractDeliveryDonationAmountAsync(att.Url);
 
                 if (amt.HasValue) total += amt.Value;
             }

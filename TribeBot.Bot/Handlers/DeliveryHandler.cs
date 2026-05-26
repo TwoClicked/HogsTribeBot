@@ -1,20 +1,10 @@
 ﻿using Discord;
 using Discord.WebSocket;
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
-using System.Threading.Tasks;
 using TribeBot.Bot.UI;
 using TribeBot.Core.Entities;
 using TribeBot.Core.Interfaces;
 using TribeBot.Services.Services;
-using Img = SixLabors.ImageSharp.Image;
-using ImgRect = SixLabors.ImageSharp.Rectangle;
-using Rgba32 = SixLabors.ImageSharp.PixelFormats.Rgba32;
 
 namespace TribeBot.Bot.Handlers
 {
@@ -639,25 +629,17 @@ namespace TribeBot.Bot.Handlers
                 if (!att.ContentType?.StartsWith("image") ?? true)
                     continue;
 
-                string tmp = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.png");
-
-                using var http = new HttpClient();
-                var data = await http.GetByteArrayAsync(att.Url);
-                await File.WriteAllBytesAsync(tmp, data);
-
                 int value = 0;
 
                 if (mode == "gold")
                 {
-                    value = await _ocrService.ExtractDeliveryDonationAmountAsync(tmp) ?? 0;
+                    value = await _ocrService.ExtractDeliveryDonationAmountAsync(att.Url) ?? 0;
                 }
                 else
                 {
-                    var text = await _ocrService.ExtractRawTextAsync(tmp);
+                    var text = await _ocrService.ExtractRawTextAsync(att.Url);
                     value = int.TryParse(text, out var v) ? v : 0;
                 }
-
-                File.Delete(tmp);
 
                 if (value > bestValue)
                     bestValue = value;

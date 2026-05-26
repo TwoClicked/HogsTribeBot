@@ -49,16 +49,12 @@ namespace TribeBot.Data.GoogleSheets
 
 
 
-        public GoogleSheetsDataStore(string credentialsPath, string spreadsheetId)
+        public GoogleSheetsDataStore(string credentialsJson, string spreadsheetId)
         {
             _spreadsheetId = spreadsheetId;
 
-            GoogleCredential credential;
-            using (var stream = new FileStream(credentialsPath, FileMode.Open, FileAccess.Read))
-            {
-                credential = GoogleCredential.FromStream(stream)
-                    .CreateScoped(SheetsService.Scope.Spreadsheets);
-            }
+            var credential = GoogleCredential.FromJson(credentialsJson)
+                .CreateScoped(SheetsService.Scope.Spreadsheets);
 
             _sheetsService = new SheetsService(new BaseClientService.Initializer()
             {
