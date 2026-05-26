@@ -128,7 +128,8 @@ namespace TribeBot.Bot
             }
             else
             {
-                Console.WriteLine($"GOOGLE_CREDENTIALS_JSON loaded from env, length={credentialsJson.Length}");
+                // If we ever need to see if the google ENV is being loaded uncomment this line, just logs file length to avoid dumping secrets
+                //Console.WriteLine($"GOOGLE_CREDENTIALS_JSON loaded from env, length={credentialsJson.Length}");
             }
 
             string spreadsheetId = Environment.GetEnvironmentVariable("SHEETS_SPREADSHEET_ID")
