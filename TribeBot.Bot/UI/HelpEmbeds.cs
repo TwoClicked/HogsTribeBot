@@ -166,6 +166,10 @@ namespace TribeBot.Bot.UI
                 "`/farm list` — Receive a DM with your farms\n" +
                 "`/farm edit <farmId>` — Edit a farm you own\n" +
                 "`/farm remove <farmId>` — Remove a farm you own")
+            .AddField("Officers",
+                "`/farm addfor <user>` — Register a single farm for a player\n" +
+                "`/farm bulkfor <user>` — Register multiple farms for a player\n" +
+                "`/farm listfor <user>` — View all registered farms for a player")
             .AddField("Notes",
                 "• Farm IDs must be numeric\n" +
                 "• Duplicate IDs are blocked\n" +
