@@ -754,6 +754,55 @@ FarmCharlie | 987654",
             }
         }
 
+        // ======================================================
+        // /farm listfor (Officer/Farm Manager only)
+        // ======================================================
+        [SlashCommand("listfor", "View all registered farms for a player (Officer/Farm manager only)")]
+        public async Task ListFarmsFor(
+            [Summary("user", "The player to look up")] SocketGuildUser targetUser)
+        {
+            if (Context.User is not SocketGuildUser officer ||
+                !officer.Roles.Any(r => r.Id == OfficerRoleId || r.Id == FarmManagerRoleId))
+            {
+                await RespondAsync(
+                    embed: EmbedHelper.Error("You do not have permission to use this command."),
+                    ephemeral: true);
+                return;
+            }
+
+            await DeferAsync(ephemeral: true);
+
+            var farms = await _farmService.GetFarmsForUserAsync(targetUser.Id.ToString());
+
+            if (farms.Count == 0)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Info(
+                        $"🌾 Farms for {targetUser.DisplayName}",
+                        "This player has **no registered farms**."),
+                    ephemeral: true);
+                return;
+            }
+
+            // Header embed — shows the count
+            await FollowupAsync(
+                embed: EmbedHelper.Info(
+                    $"🌾 Farms for {targetUser.DisplayName}",
+                    $"**{farms.Count} registered farm(s)**"),
+                ephemeral: true);
+
+            // Build individual lines and chunk them
+            var lines = farms.Select((f, i) =>
+                $"`{i + 1,3}.` **{f.FarmName}** — `{f.FarmId}`");
+
+            var chunks = ChunkLines(lines);
+
+            foreach (var chunk in chunks)
+            {
+                await FollowupAsync(chunk, ephemeral: true);
+            }
+        }
+
 
         // ======================================================
         // MODAL HANDLER - BULK FARM REGISTER
