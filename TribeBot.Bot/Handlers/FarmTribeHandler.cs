@@ -39,7 +39,7 @@ namespace TribeBot.Bot.Handlers
              new(StringComparer.OrdinalIgnoreCase)
             {
                 // FarmTribeName → Officer Role ID
-                { "BRF",  1453112186334347418 },  
+                { "BRF",  1453112186334347418 },
                 { "GRV",  1453124084048335063 },
                 { "SAGE", 1453124213656387785 },
                 { "FLNK", 1453124266106163330 },
@@ -202,6 +202,12 @@ namespace TribeBot.Bot.Handlers
                     }
                 });
 
+                await LogOfficerAsync(
+                    "Farm Tribe Player Assigned",
+                    $"• Assigned by: {officer.DisplayName}\n" +
+                    $"• Player: {player.DisplayName}\n" +
+                    $"• Tribe: {tribeName}");
+
                 await FollowupAsync(
                     embed: EmbedHelper.Success(
                         $"**{player.DisplayName}** assigned to farm tribe **{tribeName}**."),
@@ -273,6 +279,12 @@ namespace TribeBot.Bot.Handlers
                         // DM disabled — ignore
                     }
                 });
+
+                await LogOfficerAsync(
+                    "Farm Tribe Player Unassigned",
+                    $"• Unassigned by: {officer.DisplayName}\n" +
+                    $"• Player: {player.DisplayName}\n" +
+                    $"• Tribe: {tribeName ?? "Unknown"}");
 
                 await FollowupAsync(
                     embed: EmbedHelper.Success(
