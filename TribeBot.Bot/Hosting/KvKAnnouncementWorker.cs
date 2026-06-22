@@ -12,7 +12,7 @@ namespace TribeBot.Bot.Hosting
     {
         private readonly DiscordSocketClient _client;
         private readonly IKvKScheduleService _kvkScheduleService;
-        private const ulong KvKAnnouncementChannelId = 1491121910195425621;
+        private const ulong KvKAnnouncementChannelId = 1516289806290915429;
         public KvKAnnouncementWorker(
             DiscordSocketClient client,
             IKvKScheduleService kvkScheduleService)
