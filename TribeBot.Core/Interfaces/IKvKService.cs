@@ -17,5 +17,6 @@ namespace TribeBot.Core.Interfaces
         Task<KvKEvent?> GetActiveKvKAsync();
 
         Task EndActiveKvKAsync();
+        Task<List<KvKEvent>> GetAllKvKEventsAsync();
     }
 }

@@ -4,6 +4,7 @@ using Discord.WebSocket;
 using System;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using TribeBot.Bot.Modals;
 using TribeBot.Bot.UI;
@@ -115,6 +116,88 @@ namespace TribeBot.Bot.Handlers
 
             await FollowupAsync(
                 embed: EmbedHelper.Success($"**{active.Name}** has been ended."),
+                ephemeral: true);
+        }
+
+        // ======================================================
+        // /kvk status
+        // ======================================================
+        [SlashCommand("status", "Show the currently active KvK and its scheduled events")]
+        public async Task KvKStatus()
+        {
+            await DeferAsync(ephemeral: true);
+
+            var active = await _kvkService.GetActiveKvKAsync();
+
+            if (active == null)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Info("KvK Status", "There is no active KvK right now."),
+                    ephemeral: true);
+                return;
+            }
+
+            var timedEvents = await _kvkScheduleService.GetTimedEventsForKvKAsync(active.KvKId);
+
+            var description = new StringBuilder();
+            description.AppendLine($"**Name:** {active.Name}");
+            description.AppendLine($"**ID:** `{active.KvKId}`");
+            description.AppendLine($"**Start:** {active.StartUtc:yyyy-MM-dd HH:mm} UTC");
+            description.AppendLine($"**End:** {active.EndUtc:yyyy-MM-dd HH:mm} UTC");
+            description.AppendLine();
+
+            if (timedEvents.Count == 0)
+            {
+                description.AppendLine("_No events have been scheduled for this KvK yet._");
+            }
+            else
+            {
+                description.AppendLine("**Scheduled Events:**");
+                foreach (var evt in timedEvents.OrderBy(e => e.StartUtc))
+                {
+                    string status = evt.AnnouncementSent ? "✅" : "⏳";
+                    description.AppendLine(
+                        $"{status} **{evt.EventType}** — {evt.StartUtc:yyyy-MM-dd HH:mm} UTC");
+                }
+            }
+
+            await FollowupAsync(
+                embed: EmbedHelper.Info("🛡️ Active KvK", description.ToString()),
+                ephemeral: true);
+        }
+
+        // ======================================================
+        // /kvk list
+        // ======================================================
+        [SlashCommand("list", "List all KvK events, active and past")]
+        public async Task KvKList()
+        {
+            await DeferAsync(ephemeral: true);
+
+            var all = await _kvkService.GetAllKvKEventsAsync();
+
+            if (all.Count == 0)
+            {
+                await FollowupAsync(
+                    embed: EmbedHelper.Info("KvK List", "No KvK events have been created yet."),
+                    ephemeral: true);
+                return;
+            }
+
+            var description = new StringBuilder();
+
+            foreach (var kvk in all.OrderByDescending(k => k.StartUtc))
+            {
+                string status = kvk.IsActive ? "🟢 Active" : "⚪ Ended";
+                description.AppendLine($"**{kvk.Name}** — {status}");
+                description.AppendLine($"• ID: `{kvk.KvKId}`");
+                description.AppendLine($"• Start: {kvk.StartUtc:yyyy-MM-dd HH:mm} UTC");
+                description.AppendLine($"• End: {kvk.EndUtc:yyyy-MM-dd HH:mm} UTC");
+                description.AppendLine();
+            }
+
+            await FollowupAsync(
+                embed: EmbedHelper.Info("🛡️ All KvK Events", description.ToString()),
                 ephemeral: true);
         }
 

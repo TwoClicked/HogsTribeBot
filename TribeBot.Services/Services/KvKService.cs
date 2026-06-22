@@ -43,6 +43,8 @@ namespace TribeBot.Services.Services
             return kvk;
         }
 
+        public Task<List<KvKEvent>> GetAllKvKEventsAsync()
+            => _dataStore.GetAllKvKEventsAsync();
         public Task<KvKEvent?> GetActiveKvKAsync()
             => _dataStore.GetActiveKvKAsync();
 

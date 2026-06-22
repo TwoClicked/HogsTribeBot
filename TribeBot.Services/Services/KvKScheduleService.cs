@@ -61,6 +61,9 @@ namespace TribeBot.Services.Services
             evt.AnnouncementSent = true;
             await _dataStore.UpdateKvKTimedEventAsync(evt);
         }
+
+        public Task<List<KvKTimedEvent>> GetTimedEventsForKvKAsync(string kvkId)
+            => _dataStore.GetTimedEventsForKvKAsync(kvkId);
     }
 
 }

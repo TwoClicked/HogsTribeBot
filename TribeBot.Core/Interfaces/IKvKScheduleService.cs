@@ -18,5 +18,6 @@ namespace TribeBot.Core.Interfaces
             TimeSpan within);
 
         Task MarkAnnouncedAsync(string eventId);
+        Task<List<KvKTimedEvent>> GetTimedEventsForKvKAsync(string kvkId);
     }
 }
