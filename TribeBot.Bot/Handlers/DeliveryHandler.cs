@@ -58,28 +58,33 @@ namespace TribeBot.Bot.Handlers
 
             if (content == "!deliverystart")
             {
+                if (!await EnsureDeliveryChannel(message)) return true;
                 await StartEvent(message);
                 return true;
             }
 
             if (content == "!deliveryend")
             {
+                if (!await EnsureDeliveryChannel(message)) return true;
                 await EndEvent(message);
                 return true;
             }
 
             if (content == "!deliverystatus")
             {
+                if (!await EnsureDeliveryChannel(message)) return true;
                 await ShowStatus(message);
                 return true;
             }
 
             if (content == "!checkdelivery")
             {
+                if (!await EnsureDeliveryChannel(message)) return true;
                 await CheckUserDeliveryStatus(message);
                 return true;
             }
 
+            // !deliveryreminder intentionally NOT restricted to the delivery channel
             if (content == "!deliveryreminder")
             {
                 await SendDeliveryReminder(message);
@@ -88,12 +93,17 @@ namespace TribeBot.Bot.Handlers
 
             if (content.StartsWith("!donatefor"))
             {
+                // HandleDonateFor already enforces DeliveryChannelId internally,
+                // but we route through the same check for a consistent message.
+                if (!await EnsureDeliveryChannel(message)) return true;
                 await HandleDonateFor(message);
                 return true;
             }
 
             if (content == "!gold" || content == "gold")
             {
+                if (!await EnsureDeliveryChannel(message)) return true;
+
                 var eventId = await _deliveryService.GetActiveEventIdAsync();
 
                 if (eventId == null)
@@ -119,6 +129,8 @@ namespace TribeBot.Bot.Handlers
 
             if (content == "!bracelet" || content == "bracelet")
             {
+                if (!await EnsureDeliveryChannel(message)) return true;
+
                 var eventId = await _deliveryService.GetActiveEventIdAsync();
 
                 if (eventId == null)
@@ -147,6 +159,24 @@ namespace TribeBot.Bot.Handlers
                 await HandleSubmission(message);
                 return true;
             }
+
+            return false;
+        }
+
+        // ============================================================
+        // CHANNEL GUARD
+        // ============================================================
+        /// <summary>
+        /// Ensures the command was used in the delivery channel.
+        /// If not, replies (visible only to the caller via mention) and returns false.
+        /// </summary>
+        private async Task<bool> EnsureDeliveryChannel(SocketMessage message)
+        {
+            if (message.Channel.Id == DeliveryChannelId)
+                return true;
+
+            await message.Channel.SendMessageAsync(
+                $"{message.Author.Mention} ❌ This command can only be used in <#{DeliveryChannelId}>.");
 
             return false;
         }

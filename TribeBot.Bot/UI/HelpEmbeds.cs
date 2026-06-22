@@ -37,23 +37,23 @@ namespace TribeBot.Bot.UI
             .Build();
 
         // REIGN
-        public static Embed Reign() => new EmbedBuilder()
-            .WithTitle("⚔️ Reign Commands")
-            .AddField("Players",
-                "`!applyreign` — Apply for Viking Reign\n" +
-                "`!listreign` — Show sorted applicants\n" +
-                "`!leavereign` — Leave the current reign list")
-            .AddField("Officer Only",
-                "`!clearreign`\n" +
-                "`!setreignpoints`\n" +
-                "`!SetReignPlayer`\n" +
-                "`!lockreign`\n" +
-                "`!unlockreign`\n" +
-                "`!exempt`\n" +
-                "`!unexempt`\n" +
-                "`!removereign`")
-            .WithColor(Color.DarkRed)
-            .Build();
+        //public static Embed Reign() => new EmbedBuilder()
+        //    .WithTitle("⚔️ Reign Commands")
+        //    .AddField("Players",
+        //        "`!applyreign` — Apply for Viking Reign\n" +
+        //        "`!listreign` — Show sorted applicants\n" +
+        //        "`!leavereign` — Leave the current reign list")
+        //    .AddField("Officer Only",
+        //        "`!clearreign`\n" +
+        //        "`!setreignpoints`\n" +
+        //        "`!SetReignPlayer`\n" +
+        //        "`!lockreign`\n" +
+        //        "`!unlockreign`\n" +
+        //        "`!exempt`\n" +
+        //        "`!unexempt`\n" +
+        //        "`!removereign`")
+        //    .WithColor(Color.DarkRed)
+        //    .Build();
 
         // BANK
         public static Embed Bank() => new EmbedBuilder()
@@ -72,6 +72,7 @@ namespace TribeBot.Bot.UI
         public static Embed Delivery() => new EmbedBuilder()
             .WithTitle("📦 Delivery Event Commands")
             .AddField("Players",
+                "`!donatefor` — Submit for someone\n" +
                 "`!checkdelivery` — Check if you completed the event\n" +
                 "`!gold` — Submit gold contribution\n" +
                 "`!bracelet` — Submit bracelet contribution\n\n" +
@@ -79,6 +80,7 @@ namespace TribeBot.Bot.UI
             .AddField("Officer Only",
                 "`!deliverystart` — Start a delivery event\n" +
                 "`!deliverystatus` — Show missing players\n" +
+                "`!deliveryreminder` — Remind who has not donated yet\n" +
                 "`!deliveryend` — End event & issue fines")
             .AddField("Requirements",
                 $"📿 ≥ {DeliveryHandler.BraceletRequirement} bracelets\n" +

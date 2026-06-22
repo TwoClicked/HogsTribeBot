@@ -18,7 +18,7 @@ namespace TribeBot.Bot.UI
                 .AddOption("General", "general", isDefault: selected == "general")
                 .AddOption("Registration", "registration", isDefault: selected == "registration")
                 .AddOption("Update", "update", isDefault: selected == "update")
-                .AddOption("Reign Event", "reign", isDefault: selected == "reign")
+                //.AddOption("Reign Event", "reign", isDefault: selected == "reign")
                 .AddOption("Bank", "bank", isDefault: selected == "bank")
                 .AddOption("Fines", "fines", isDefault: selected == "fines")
                 .AddOption("Polls", "polls", isDefault: selected == "polls")

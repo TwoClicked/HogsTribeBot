@@ -16,7 +16,7 @@ namespace TribeBot.Bot.Modals
         [ModalTextInput("kvk_id")]
         public string KvKId { get; set; } = string.Empty;
 
-        [InputLabel("Event Type (gate / killingfield)")]
+        [InputLabel("Event Type")]
         [ModalTextInput("event_type")]
         public string EventType { get; set; } = string.Empty;
 

@@ -8,22 +8,18 @@ using System.Threading.Tasks;
 using TribeBot.Bot.Modals;
 using TribeBot.Bot.UI;
 using TribeBot.Core.Interfaces;
-
 namespace TribeBot.Bot.Handlers
 {
     [Group("kvkevent", "Kingdom vs Kingdom scheduling")]
     public class KvKScheduleHandler : InteractionModuleBase<SocketInteractionContext>
     {
         private readonly IKvKScheduleService _kvkScheduleService;
-
         // CHANGE THIS TO YOUR OFFICER ROLE ID
         private const ulong OfficerRoleId = 1222665812775534592;
-
         public KvKScheduleHandler(IKvKScheduleService kvkScheduleService)
         {
             _kvkScheduleService = kvkScheduleService;
         }
-
         // ======================================================
         // /kvk add-event
         // ======================================================
@@ -38,10 +34,8 @@ namespace TribeBot.Bot.Handlers
                     ephemeral: true);
                 return;
             }
-
             await RespondWithModalAsync<AddKvKEventModal>("kvk_add_event");
         }
-
         // ======================================================
         // MODAL HANDLER
         // ======================================================
@@ -49,7 +43,6 @@ namespace TribeBot.Bot.Handlers
         public async Task HandleAddKvKEvent(AddKvKEventModal modal)
         {
             await DeferAsync(ephemeral: true);
-
             // Validate datetime
             if (!DateTime.TryParseExact(
                 modal.StartTime.Trim(),
@@ -64,14 +57,13 @@ namespace TribeBot.Bot.Handlers
                     ephemeral: true);
                 return;
             }
+            // Free-text event type — no longer restricted to gate/killingfield
+            var eventType = modal.EventType.Trim();
 
-            // Validate event type
-            var eventType = modal.EventType.Trim().ToLower();
-            if (eventType != "gate" && eventType != "killingfield")
+            if (string.IsNullOrWhiteSpace(eventType))
             {
                 await FollowupAsync(
-                    embed: EmbedHelper.Error(
-                        "Event type must be **Gate** or **KillingField**."),
+                    embed: EmbedHelper.Error("Event type cannot be empty."),
                     ephemeral: true);
                 return;
             }
@@ -82,7 +74,6 @@ namespace TribeBot.Bot.Handlers
                     modal.KvKId.Trim(),
                     eventType,
                     startUtc);
-
                 await FollowupAsync(
                     embed: EmbedHelper.Success(
                         $"KvK event added.\n\n" +
