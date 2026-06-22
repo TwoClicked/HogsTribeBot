@@ -214,5 +214,18 @@ namespace TribeBot.Bot.UI
                 "• ❔ Maybe")
             .WithColor(Color.DarkRed)
             .Build();
+
+        // KVK EVENTS
+        public static Embed KvK() => new EmbedBuilder()
+            .WithTitle("🛡️ KvK Event Commands")
+            .AddField("Officer Only",
+                "`/kvkevent add-event` — Open a form to schedule a KvK event\n" +
+                "• KvK ID — identifier for the kingdom event\n" +
+                "• Event Type — any free-text label (e.g. Gate, Killing Field, Boss Spawn)\n" +
+                "• Start Time — UTC, format `yyyy-MM-dd HH:mm`")
+            .AddField("Announcements",
+                "Scheduled events are automatically announced with `@everyone` up to **6 hours** before they start.")
+            .WithColor(Color.Purple)
+            .Build();
     }
 }

@@ -12,7 +12,7 @@ namespace TribeBot.Bot.Handlers
 
         // UPDATED ORDER — now includes titles, sworn, events
         private readonly string[] Order =
-        {
+                {
          "general",
          "registration",
          "update",
@@ -26,6 +26,7 @@ namespace TribeBot.Bot.Handlers
          "sworn",
          "events",
          "raids",
+         "kvk",
          "announcer"
         };
 
@@ -108,6 +109,7 @@ namespace TribeBot.Bot.Handlers
                 "sworn" => HelpEmbeds.Sworn(),
                 "events" => HelpEmbeds.Events(),
                 "raids" => HelpEmbeds.Raids(),
+                "kvk" => HelpEmbeds.KvK(),
                 "farms" => HelpEmbeds.Farms(),
                 "farmtribes" => HelpEmbeds.FarmTribes(),
                 _ => HelpEmbeds.General()

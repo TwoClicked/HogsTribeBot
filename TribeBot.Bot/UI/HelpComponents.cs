@@ -29,7 +29,9 @@ namespace TribeBot.Bot.UI
                 .AddOption("Events", "events", isDefault: selected == "events")
                 .AddOption("Farms", "farms", isDefault: selected == "farms")
                 .AddOption("Farm Tribes", "farmtribes", isDefault: selected == "farmtribes")
-                .AddOption("Raid Signups", "raids", isDefault: selected == "raids");
+                .AddOption("Raid Signups", "raids", isDefault: selected == "raids")
+                .AddOption("KvK Events", "kvk", isDefault: selected == "kvk");
+
 
             builder.WithSelectMenu(menu);
             return builder;
