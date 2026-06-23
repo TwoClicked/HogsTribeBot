@@ -21,7 +21,8 @@ namespace TribeBot.Services.Services
         public async Task AddTimedEventAsync(
             string kvkId,
             string eventType,
-            DateTime startUtc)
+            DateTime startUtc,
+            string description)
         {
             var evt = new KvKTimedEvent
             {
@@ -29,7 +30,8 @@ namespace TribeBot.Services.Services
                 KvKId = kvkId,
                 EventType = eventType,
                 StartUtc = startUtc,
-                AnnouncementSent = false
+                AnnouncementSent = false,
+                Description = description
             };
 
             await _dataStore.AddKvKTimedEventAsync(evt);
@@ -65,5 +67,4 @@ namespace TribeBot.Services.Services
         public Task<List<KvKTimedEvent>> GetTimedEventsForKvKAsync(string kvkId)
             => _dataStore.GetTimedEventsForKvKAsync(kvkId);
     }
-
 }

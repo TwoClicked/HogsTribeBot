@@ -64,18 +64,22 @@ namespace TribeBot.Bot.Hosting
                 // Free-text event type — no longer restricted to gate/killingfield
                 string title = $"⏰ {evt.EventType} Incoming";
 
+                // Description field can contain officer-written @role mentions —
+                // these will ping correctly since allowedMentions is set to All below.
+                string descriptionText =
+                    (string.IsNullOrWhiteSpace(evt.Description) ? "" : $"{evt.Description}\n\n") +
+                    $"**Starts:** <t:{ToUnix(evt.StartUtc)}:F>\n" +
+                    $"**Time Remaining:** <t:{ToUnix(evt.StartUtc)}:R>";
+
                 var embed = new EmbedBuilder()
                     .WithTitle(title)
                     .WithColor(Color.Gold)
-                    .WithDescription(
-                        $"**Starts:** <t:{ToUnix(evt.StartUtc)}:F>\n" +
-                        $"**Time Remaining:** <t:{ToUnix(evt.StartUtc)}:R>")
+                    .WithDescription(descriptionText)
                     .WithFooter("KvK Event Reminder")
                     .WithTimestamp(DateTimeOffset.UtcNow)
                     .Build();
 
                 await channel.SendMessageAsync(
-                    text: "@everyone",
                     embed: embed,
                     allowedMentions: AllowedMentions.All
                 );

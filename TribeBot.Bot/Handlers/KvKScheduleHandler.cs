@@ -23,7 +23,7 @@ namespace TribeBot.Bot.Handlers
         // ======================================================
         // /kvk add-event
         // ======================================================
-        [SlashCommand("add-event", "Add a KvK gate or killing field event")]
+        [SlashCommand("add-event", "Add a KvK event")]
         public async Task AddKvKEvent()
         {
             var user = Context.User as SocketGuildUser;
@@ -59,7 +59,6 @@ namespace TribeBot.Bot.Handlers
             }
             // Free-text event type — no longer restricted to gate/killingfield
             var eventType = modal.EventType.Trim();
-
             if (string.IsNullOrWhiteSpace(eventType))
             {
                 await FollowupAsync(
@@ -68,18 +67,26 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
+            // Optional free-text description — officers can put @role mentions here
+            var description = modal.Description?.Trim() ?? string.Empty;
+
             try
             {
                 await _kvkScheduleService.AddTimedEventAsync(
                     modal.KvKId.Trim(),
                     eventType,
-                    startUtc);
+                    startUtc,
+                    description);
+
                 await FollowupAsync(
                     embed: EmbedHelper.Success(
                         $"KvK event added.\n\n" +
                         $"**KvK ID:** `{modal.KvKId}`\n" +
                         $"**Type:** `{eventType}`\n" +
-                        $"**Start:** `{startUtc:yyyy-MM-dd HH:mm} UTC`"),
+                        $"**Start:** `{startUtc:yyyy-MM-dd HH:mm} UTC`" +
+                        (string.IsNullOrWhiteSpace(description)
+                            ? ""
+                            : $"\n**Description:** {description}")),
                     ephemeral: true);
             }
             catch (Exception ex)

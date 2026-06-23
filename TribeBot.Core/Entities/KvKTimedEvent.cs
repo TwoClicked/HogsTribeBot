@@ -10,9 +10,10 @@ namespace TribeBot.Core.Entities
     {
         public string EventId { get; set; } = "";
         public string KvKId { get; set; } = "";
-        public string EventType { get; set; } = ""; // "KillingField" or "GateOpening"
+        public string EventType { get; set; } = "";
         public DateTime StartUtc { get; set; }
         public bool AnnouncementSent { get; set; }
+        public string Description { get; set; } = "";
     }
 
 }

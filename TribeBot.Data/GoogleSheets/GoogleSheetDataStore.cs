@@ -1754,7 +1754,8 @@ namespace TribeBot.Data.GoogleSheets
                 evt.KvKId,
                 evt.EventType,
                 evt.StartUtc.ToString("o"),
-                evt.AnnouncementSent
+                evt.AnnouncementSent,
+                evt.Description
             };
 
             var request = _sheetsService.Spreadsheets.Values.Append(
@@ -1763,7 +1764,7 @@ namespace TribeBot.Data.GoogleSheets
                     Values = new List<IList<object>> { values }
                 },
                 _spreadsheetId,
-                $"{KvKTimedEventsSheet}!A:E"
+                $"{KvKTimedEventsSheet}!A:F"
             );
 
             request.ValueInputOption =
@@ -1777,7 +1778,7 @@ namespace TribeBot.Data.GoogleSheets
         public async Task<List<KvKTimedEvent>> GetAllKvKTimedEventsAsync()
         {
             var response = await _sheetsService.Spreadsheets.Values
-                .Get(_spreadsheetId, $"{KvKTimedEventsSheet}!A2:E")
+                .Get(_spreadsheetId, $"{KvKTimedEventsSheet}!A2:F")
                 .ExecuteAsync();
 
             var list = new List<KvKTimedEvent>();
@@ -1796,7 +1797,8 @@ namespace TribeBot.Data.GoogleSheets
                         DateTime.Parse(row[3].ToString()),
                         DateTimeKind.Utc
                     ),
-                    AnnouncementSent = bool.Parse(row[4].ToString())
+                    AnnouncementSent = bool.Parse(row[4].ToString()),
+                    Description = row.Count > 5 ? row[5].ToString() : ""
                 });
             }
 
@@ -1818,13 +1820,14 @@ namespace TribeBot.Data.GoogleSheets
             int row = index + 2;
 
             var values = new List<object>
-    {
-        evt.EventId,
-        evt.KvKId,
-        evt.EventType,
-        evt.StartUtc.ToString("o"),
-        evt.AnnouncementSent
-    };
+            {
+                evt.EventId,
+                evt.KvKId,
+                evt.EventType,
+                evt.StartUtc.ToString("o"),
+                evt.AnnouncementSent,
+                evt.Description
+            };
 
             var request = _sheetsService.Spreadsheets.Values.Update(
                 new ValueRange
@@ -1832,10 +1835,12 @@ namespace TribeBot.Data.GoogleSheets
                     Values = new List<IList<object>> { values }
                 },
                 _spreadsheetId,
-                $"{KvKTimedEventsSheet}!A{row}:E{row}"
+                $"{KvKTimedEventsSheet}!A{row}:F{row}"
             );
+
             request.ValueInputOption =
-                SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.USERENTERED;
+                Google.Apis.Sheets.v4.SpreadsheetsResource.ValuesResource
+                    .UpdateRequest.ValueInputOptionEnum.RAW;
 
             await request.ExecuteAsync();
         }

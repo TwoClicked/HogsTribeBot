@@ -12,7 +12,8 @@ namespace TribeBot.Core.Interfaces
         Task AddTimedEventAsync(
             string kvkId,
             string eventType,
-            DateTime startUtc);
+            DateTime startUtc,
+            string description);
 
         Task<List<KvKTimedEvent>> GetUpcomingEventsAsync(
             TimeSpan within);
