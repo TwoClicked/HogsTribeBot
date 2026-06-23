@@ -64,10 +64,13 @@ namespace TribeBot.Bot.Handlers
                 return;
             }
 
+            var description = modal.Description?.Trim() ?? string.Empty;
+
             var embed = RaidEmbedBuilder.BuildInitial(
                 modal.KvKId.Trim(),
                 raidType,
-                startUtc);
+                startUtc,
+                description);
 
             var message = await Context.Channel.SendMessageAsync(
                 embed: embed,
@@ -77,13 +80,17 @@ namespace TribeBot.Bot.Handlers
                 raidType,
                 startUtc,
                 Context.Channel.Id,
-                message.Id);
+                message.Id,
+                description);
 
             await FollowupAsync(
                 embed: EmbedHelper.Success(
                     $"Raid signup created.\n\n" +
                     $"**Type:** `{raidType}`\n" +
-                    $"**Start:** `{startUtc:yyyy-MM-dd HH:mm}`"),
+                    $"**Start:** `{startUtc:yyyy-MM-dd HH:mm}`" +
+                    (string.IsNullOrWhiteSpace(description)
+                        ? ""
+                        : $"\n**Description:** {description}")),
                 ephemeral: true);
         }
     }

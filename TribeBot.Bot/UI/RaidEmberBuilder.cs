@@ -17,14 +17,16 @@ namespace TribeBot.Bot.UI
         public static Embed BuildInitial(
             string kvkId,
             string raidType,
-            DateTime startUtc)
+            DateTime startUtc,
+            string description)
         {
             var title = $"⚔️ {raidType} Raid Signup";
 
             return new EmbedBuilder()
                 .WithTitle(title)
-                .WithColor(GetRaidColor(raidType))
+                .WithColor(Color.Gold)
                 .WithDescription(
+                    (string.IsNullOrWhiteSpace(description) ? "" : $"{description}\n\n") +
                     $"**Start Time:** <t:{ToUnix(startUtc)}:F>\n" +
                     $"**Time Remaining:** <t:{ToUnix(startUtc)}:R>")
                 .AddField("✅ YES", "_No signups yet_", true)
@@ -50,8 +52,9 @@ namespace TribeBot.Bot.UI
 
             return new EmbedBuilder()
                 .WithTitle(title)
-                .WithColor(GetRaidColor(raid.RaidType))
+                .WithColor(Color.Gold)
                 .WithDescription(
+                    (string.IsNullOrWhiteSpace(raid.Description) ? "" : $"{raid.Description}\n\n") +
                     $"**Start Time:** <t:{ToUnix(raid.StartUtc)}:F>\n" +
                     $"**Time Remaining:** <t:{ToUnix(raid.StartUtc)}:R>")
                 .AddField($"✅ YES ({yesCount})", FormatUsers(summary.Yes), true)
@@ -75,17 +78,6 @@ namespace TribeBot.Bot.UI
         // ======================================================
         // HELPERS
         // ======================================================
-        private static Color GetRaidColor(string raidType)
-        {
-            return raidType.ToLowerInvariant() switch
-            {
-                "gate" => Color.Gold,
-                "killing field" => Color.Red,
-                "killingfield" => Color.Red,
-                _ => Color.DarkGrey
-            };
-        }
-
         private static string FormatUsers(IEnumerable<ulong> userIds)
         {
             if (!userIds.Any())

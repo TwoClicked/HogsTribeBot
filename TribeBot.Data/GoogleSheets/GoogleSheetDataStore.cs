@@ -1850,20 +1850,18 @@ namespace TribeBot.Data.GoogleSheets
             var values = new List<object>
     {
         raid.RaidId,
-        raid.RaidType,                   
+        raid.RaidType,
         raid.StartUtc.ToString("o"),
         raid.ChannelId.ToString(),
         raid.MessageId.ToString(),
-        raid.IsClosed.ToString().ToLower()
+        raid.IsClosed.ToString().ToLower(),
+        raid.Description
     };
 
             var request = _sheetsService.Spreadsheets.Values.Append(
-                new ValueRange
-                {
-                    Values = new List<IList<object>> { values }
-                },
+                new ValueRange { Values = new List<IList<object>> { values } },
                 _spreadsheetId,
-                $"{RaidEventsSheet}!A:F"
+                $"{RaidEventsSheet}!A:G"
             );
 
             request.ValueInputOption =
@@ -1963,18 +1961,10 @@ namespace TribeBot.Data.GoogleSheets
         {
             var response = await _sheetsService.Spreadsheets.Values.Get(
                 _spreadsheetId,
-                $"{RaidEventsSheet}!A:F"
+                $"{RaidEventsSheet}!A:G"
             ).ExecuteAsync();
 
             var rows = response.Values?.Skip(1) ?? Enumerable.Empty<IList<object>>();
-
-            // Column indexes (NOT values)
-            const int RaidIdColumn = 0;
-            const int RaidTypeColumn = 1;
-            const int StartUtcColumn = 2;
-            const int ChannelIdColumn = 3;
-            const int MessageIdColumn = 4;
-            const int IsClosedColumn = 5;
 
             return rows.Select(r => new Raid
             {
@@ -1983,7 +1973,8 @@ namespace TribeBot.Data.GoogleSheets
                 StartUtc = DateTime.Parse(r[2].ToString()!).ToUniversalTime(),
                 ChannelId = ulong.Parse(r[3].ToString()!, CultureInfo.InvariantCulture),
                 MessageId = ulong.Parse(r[4].ToString()!, CultureInfo.InvariantCulture),
-                IsClosed = bool.Parse(r[5].ToString()!)
+                IsClosed = bool.Parse(r[5].ToString()!),
+                Description = r.Count > 6 ? r[6].ToString()! : ""
             }).ToList();
         }
 

@@ -12,7 +12,8 @@ namespace TribeBot.Core.Interfaces
             string raidType,
             DateTime startUtc,
             ulong channelId,
-            ulong messageId);
+            ulong messageId,
+            string description);
 
         Task<Raid?> GetRaidByMessageAsync(ulong messageId);
 

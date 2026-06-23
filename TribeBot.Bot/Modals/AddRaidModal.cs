@@ -1,4 +1,5 @@
-﻿using Discord.Interactions;
+﻿using Discord;
+using Discord.Interactions;
 
 namespace TribeBot.Bot.Modals
 {
@@ -14,7 +15,7 @@ namespace TribeBot.Bot.Modals
 
         [ModalTextInput(
             "raid_type",
-            placeholder: "gate / killingfield",
+            placeholder: "e.g. Gate, Killing Field, Boss Spawn",
             maxLength: 20)]
         public string RaidType { get; set; }
 
@@ -23,5 +24,13 @@ namespace TribeBot.Bot.Modals
             placeholder: "yyyy-MM-dd HH:mm (UTC)",
             maxLength: 20)]
         public string StartTime { get; set; }
+
+        [InputLabel("Description (optional)")]
+        [ModalTextInput(
+            "description",
+            TextInputStyle.Paragraph,
+            minLength: 0,
+            maxLength: 300)]
+        public string Description { get; set; } = string.Empty;
     }
 }

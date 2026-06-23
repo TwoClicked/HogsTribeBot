@@ -25,7 +25,8 @@ namespace TribeBot.Services.Services
             string raidType,
             DateTime startUtc,
             ulong channelId,
-            ulong messageId)
+            ulong messageId,
+            string description)
         {
             if (startUtc.Kind != DateTimeKind.Utc)
                 throw new ArgumentException("Start time must be UTC");
@@ -37,7 +38,8 @@ namespace TribeBot.Services.Services
                 StartUtc = startUtc,
                 ChannelId = channelId,
                 MessageId = messageId,
-                IsClosed = false
+                IsClosed = false,
+                Description = description?.Trim() ?? ""
             };
 
             await _store.CreateRaidAsync(raid);
