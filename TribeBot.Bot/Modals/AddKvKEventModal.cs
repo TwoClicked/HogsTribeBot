@@ -24,7 +24,7 @@ namespace TribeBot.Bot.Modals
         [ModalTextInput("start_time")]
         public string StartTime { get; set; } = string.Empty;
 
-        [InputLabel("Description (optional, supports @role mentions)")]
+        [InputLabel("Description")]
         [ModalTextInput("description", TextInputStyle.Paragraph, minLength: 0, maxLength: 300)]
         public string Description { get; set; } = string.Empty;
     }
