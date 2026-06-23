@@ -62,25 +62,18 @@ namespace TribeBot.Bot.Hosting
                     continue;
 
                 // Free-text event type — no longer restricted to gate/killingfield
-                string title = $"⏰ {evt.EventType} Incoming";
 
-                // Description field can contain officer-written @role mentions —
-                // these will ping correctly since allowedMentions is set to All below.
-                string descriptionText =
+                // Plain text only (no embed) so:
+                // 1. Mentions in Description (e.g. @everyone, @here, <@&roleId>) actually ping —
+                //    Discord only fires notifications for mentions in message content, not embeds.
+                // 2. Kiki can parse a single plain-text message; it can't handle content + embed together.
+                string messageText =
                     (string.IsNullOrWhiteSpace(evt.Description) ? "" : $"{evt.Description}\n\n") +
-                    $"**Starts:** <t:{ToUnix(evt.StartUtc)}:F>\n" +
-                    $"**Time Remaining:** <t:{ToUnix(evt.StartUtc)}:R>";
-
-                var embed = new EmbedBuilder()
-                    .WithTitle(title)
-                    .WithColor(Color.Gold)
-                    .WithDescription(descriptionText)
-                    .WithFooter("KvK Event Reminder")
-                    .WithTimestamp(DateTimeOffset.UtcNow)
-                    .Build();
+                    $"⏰ **{evt.EventType} Incoming**\n" +
+                    $"Starts: <t:{ToUnix(evt.StartUtc)}:F> (<t:{ToUnix(evt.StartUtc)}:R>)";
 
                 await channel.SendMessageAsync(
-                    embed: embed,
+                    text: messageText,
                     allowedMentions: AllowedMentions.All
                 );
 
