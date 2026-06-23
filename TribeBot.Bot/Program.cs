@@ -91,7 +91,7 @@ namespace TribeBot.Bot
         {
             try
             {
-                ulong leaveChannelId = 1440211043820507217; 
+                ulong leaveChannelId = 1440211043820507217;
 
                 var channel = guild.GetTextChannel(leaveChannelId);
                 if (channel == null)
@@ -192,6 +192,43 @@ namespace TribeBot.Bot
 
                 Console.WriteLine("[Init] Loading interaction modules...");
                 await _interactionService.AddModulesAsync(typeof(Program).Assembly, _services);
+
+                // =====================================================
+                // SURFACE SILENT COMMAND/MODAL FAILURES
+                // InteractionService swallows exceptions internally and
+                // returns a Result instead of throwing, so our outer
+                // try/catch in HandleInteractionAsync never sees them.
+                // These hooks log the real error/reason.
+                // =====================================================
+                _interactionService.SlashCommandExecuted += (info, ctx, result) =>
+                {
+                    if (!result.IsSuccess)
+                    {
+                        Console.WriteLine(
+                            $"[SlashCommand Error] {info?.Name}: {result.Error} — {result.ErrorReason}");
+                    }
+                    return Task.CompletedTask;
+                };
+
+                _interactionService.ModalCommandExecuted += (info, ctx, result) =>
+                {
+                    if (!result.IsSuccess)
+                    {
+                        Console.WriteLine(
+                            $"[ModalCommand Error] {info?.MethodName}: {result.Error} — {result.ErrorReason}");
+                    }
+                    return Task.CompletedTask;
+                };
+
+                _interactionService.ComponentCommandExecuted += (info, ctx, result) =>
+                {
+                    if (!result.IsSuccess)
+                    {
+                        Console.WriteLine(
+                            $"[ComponentCommand Error] {info?.MethodName}: {result.Error} — {result.ErrorReason}");
+                    }
+                    return Task.CompletedTask;
+                };
 
                 Console.WriteLine("[Init] Syncing guild slash commands...");
                 await _interactionService.RegisterCommandsToGuildAsync(
