@@ -206,6 +206,12 @@ namespace TribeBot.Bot
                     {
                         Console.WriteLine(
                             $"[SlashCommand Error] {info?.Name}: {result.Error} — {result.ErrorReason}");
+
+                        if (result is ExecuteResult execResult && execResult.Exception != null)
+                        {
+                            Console.WriteLine(
+                                $"[SlashCommand Exception] {execResult.Exception}");
+                        }
                     }
                     return Task.CompletedTask;
                 };
@@ -216,6 +222,12 @@ namespace TribeBot.Bot
                     {
                         Console.WriteLine(
                             $"[ModalCommand Error] {info?.MethodName}: {result.Error} — {result.ErrorReason}");
+
+                        if (result is ExecuteResult execResult && execResult.Exception != null)
+                        {
+                            Console.WriteLine(
+                                $"[ModalCommand Exception] {execResult.Exception}");
+                        }
                     }
                     return Task.CompletedTask;
                 };
