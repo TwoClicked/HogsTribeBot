@@ -136,7 +136,8 @@ namespace TribeBot.Bot.Services
         // --------------------- TITLE SYSTEM ---------------------
         private async Task CheckTitleRotationAsync()
         {
-            await CheckRotation("tycoon", Color.Blue);
+            // Tycoon paused — not in use right now
+            // await CheckRotation("tycoon", Color.Blue);
             await CheckRotation("priest", Color.Green);
         }
 
