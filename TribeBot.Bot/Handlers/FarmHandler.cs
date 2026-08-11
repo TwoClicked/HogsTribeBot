@@ -22,6 +22,10 @@ namespace TribeBot.Bot.Handlers
         private const ulong OfficerRoleId = 1222665812775534592;
         private const ulong FarmManagerRoleId = 1458892024588669134;
 
+        //Farm tribes
+        private const ulong OfficerLogChannelId = 1440211043820507217;
+        private const string GrvTribeName = "GRV";
+
         // Farm registration role
         private const ulong HogsRole = 1222668156271591485;
 
@@ -346,6 +350,8 @@ FarmCharlie | 987654",
                     targetUser.Nickname ?? targetUser.Username
                 );
 
+                await CheckGrvFarmCapAsync(targetUser.Id.ToString(), targetUser.Nickname ?? targetUser.Username);
+
                 try
                 {
                     var dm = await targetUser.CreateDMChannelAsync();
@@ -481,6 +487,7 @@ FarmCharlie | 987654",
                     );
 
                     successCount++;
+                    await CheckGrvFarmCapAsync(targetUser.Id.ToString(), targetUser.Nickname ?? targetUser.Username);
                     await Task.Delay(250);
                 }
                 catch (Exception ex)
@@ -699,6 +706,8 @@ FarmCharlie | 987654",
                     ownerIngameName: user.Nickname ?? user.Username
                 );
 
+                await CheckGrvFarmCapAsync(user.Id.ToString(), user.Nickname ?? user.Username);
+
                 await FollowupAsync(
                     embed: EmbedHelper.Success(
                         $"Farm **{modal.FarmName}** registered successfully."),
@@ -863,6 +872,7 @@ FarmCharlie | 987654",
                     );
 
                     successCount++;
+                    await CheckGrvFarmCapAsync(user.Id.ToString(), user.Nickname ?? user.Username);
                     await Task.Delay(250);
                 }
                 catch (Exception ex)
@@ -915,6 +925,44 @@ FarmCharlie | 987654",
                 chunks.Add(sb.ToString());
 
             return chunks;
+        }
+
+        // ======================================================
+        // GRV 10-FARM WATCH
+        // ======================================================
+        private async Task CheckGrvFarmCapAsync(string ownerDiscordId, string ownerDisplayName)
+        {
+            var assignment = await _assignmentService.GetAssignmentForUserAsync(ownerDiscordId);
+            if (assignment == null)
+                return;
+
+            var tribe = await _farmTribeService.GetFarmTribeByIdAsync(assignment.FarmTribeId);
+            if (tribe == null ||
+                !string.Equals(tribe.FarmTribeName, GrvTribeName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var farms = await _farmService.GetFarmsForUserAsync(ownerDiscordId);
+            if (farms.Count != 10)
+                return; // only fire exactly on the 10th, not every farm after
+
+            var channel = Context.Client.GetChannel(OfficerLogChannelId) as IMessageChannel;
+            if (channel == null)
+                return;
+
+            string mention = ulong.TryParse(ownerDiscordId, out var uid)
+                ? $"<@{uid}>"
+                : ownerDisplayName;
+
+            await channel.SendMessageAsync(
+                text: $"<@&{OfficerRoleId}>",
+                embed: EmbedHelper.Info(
+                    "⚠️ GRV Farm Cap Reached",
+                    $"• Player: {mention} ({ownerDisplayName})\n" +
+                    $"• Farm Tribe: **{tribe.FarmTribeName}**\n" +
+                    $"• Farm Count: **10**\n" +
+                    $"• Action: Needs to be moved to another farm tribe."
+                )
+            );
         }
     }
 }
