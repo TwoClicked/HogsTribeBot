@@ -44,14 +44,14 @@ namespace TribeBot.Bot.Handlers
                 .AddTextInput("Message to Send", "mightcut_message", TextInputStyle.Paragraph,
                     placeholder: "e.g. You need to cut 34,226,218 might before Sunday's KvK.",
                     required: true)
-                .AddTextInput("Target User ID (do not edit)", "target_user_id", TextInputStyle.Short,
+                .AddTextInput("Target user ID (do not edit)", "target_user_id", TextInputStyle.Short,
                     value: targetUser.Id.ToString(), required: true);
 
             await RespondWithModalAsync(modal.Build());
         }
 
         // ======================================================
-        // MODAL HANDLER
+        // Modal handler, (triggered when the officer submits the modal)
         // ======================================================
         [ModalInteraction("mightcut", ignoreGroupNames: true)]
         public async Task HandleMightCutModal(MightCutModal modal)
