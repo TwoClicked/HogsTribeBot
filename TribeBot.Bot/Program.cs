@@ -3,6 +3,7 @@ using Discord.Interactions;
 using Discord.WebSocket;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using TribeBot.Bot.Handlers;
 using TribeBot.Bot.Hosting;
@@ -36,6 +37,7 @@ namespace TribeBot.Bot
         private GeneralHandler _general_handler;
         private FallbackHandler _fallback_handler;
         private bool _bankAuditStarted;
+        private bool _bankReminderStarted;
         private DeliveryHandler _deliveryHandler;
 
         public static void Main(string[] args)
@@ -282,6 +284,36 @@ namespace TribeBot.Bot
                     });
                 }
 
+                // =====================================================
+                // AUTOMATIC BANK REMINDER (MON / WED / FRI 18:00 UTC)
+                // =====================================================
+                if (!_bankReminderStarted)
+                {
+                    _bankReminderStarted = true;
+
+                    _ = Task.Run(async () =>
+                    {
+                        while (true)
+                        {
+                            var delay = GetDelayUntilNextBankReminder();
+                            await Task.Delay(delay);
+
+                            try
+                            {
+                                await _bankHandler.ExecuteScheduledBankReminderAsync();
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[Auto Bank Reminder Error] {ex}");
+                            }
+
+                            // Sleep past the trigger minute so the next loop
+                            // iteration doesn't recompute the same target.
+                            await Task.Delay(TimeSpan.FromHours(1));
+                        }
+                    });
+                }
+
 
                 _services.GetRequiredService<SchedulerService>().Start();
 
@@ -365,6 +397,33 @@ namespace TribeBot.Bot
                 target = target.AddDays(7);
 
             return target - now;
+        }
+
+        // =====================================================================
+        // bank reminder helper (Mon/Wed/Fri 18:00 UTC)
+        // =====================================================================
+        private static readonly DayOfWeek[] BankReminderDays =
+        {
+            DayOfWeek.Monday, DayOfWeek.Wednesday, DayOfWeek.Friday
+        };
+
+        private static TimeSpan GetDelayUntilNextBankReminder()
+        {
+            var now = DateTime.UtcNow;
+
+            for (int i = 0; i < 8; i++)
+            {
+                var candidateDate = now.Date.AddDays(i);
+                if (!BankReminderDays.Contains(candidateDate.DayOfWeek))
+                    continue;
+
+                var target = candidateDate.AddHours(18); // 18:00 UTC
+                if (target > now)
+                    return target - now;
+            }
+
+            // Should never be reached — Mon/Wed/Fri always occurs within 7 days
+            return TimeSpan.FromDays(1);
         }
 
         // =====================================================================

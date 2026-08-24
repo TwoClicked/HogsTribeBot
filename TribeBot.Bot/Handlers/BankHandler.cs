@@ -20,6 +20,9 @@ namespace TribeBot.Bot.Handlers
         // In-memory weekly safeguard (no persistence by design)
         private DateTime? _lastAutoBankFineWeek;
 
+        // In-memory daily safeguard for the Mon/Wed/Fri auto reminder (no persistence by design)
+        private DateTime? _lastAutoBankReminderDate;
+
         private readonly Dictionary<ulong, string> _payForOverride = new();
 
         private const ulong DonationChannelId = 1440050111353721053;
@@ -209,6 +212,93 @@ namespace TribeBot.Bot.Handlers
                 fields["DM Failures"] = string.Join("\n", dmFailures);
 
             await LogOfficer("Weekly Bank Fines Issued", fields);
+        }
+
+        // ===================================================================
+        // AUTOMATIC BANK REMINDER (MON / WED / FRI 18:00 UTC)
+        // ===================================================================
+        public async Task ExecuteScheduledBankReminderAsync()
+        {
+            var now = DateTime.UtcNow;
+
+            // In-memory safeguard against double-firing the same reminder slot
+            if (_lastAutoBankReminderDate == now.Date)
+                return;
+
+            _lastAutoBankReminderDate = now.Date;
+
+            var guild = _client.GetGuild(GuildId);
+            if (guild == null)
+                return;
+
+            var members = await _memberService.GetAllMembersAsync();
+            var totals = await _donationService.GetTotalsForAllUsersThisWeekAsync();
+
+            var unpaid = members
+                .Where(m => !m.BankExempt &&
+                    (!totals.ContainsKey(m.DiscordUserId) ||
+                     totals[m.DiscordUserId] <= 0))
+                .ToList();
+
+            if (!unpaid.Any())
+            {
+                await LogOfficer("📩 Automatic Bank Reminder", new()
+                {
+                    { "Unpaid", "0" },
+                    { "DMs Sent", "0" }
+                });
+                return;
+            }
+
+            // Use FlattenAsync — guild.GetUser() only checks the local cache
+            // and can miss members, silently dropping reminders.
+            var guildUsers = await guild.GetUsersAsync().FlattenAsync();
+            var usersById = guildUsers.ToDictionary(u => u.Id, u => u);
+
+            int sent = 0;
+            List<string> failed = new();
+
+            foreach (var m in unpaid)
+            {
+                if (!ulong.TryParse(m.DiscordUserId, out ulong uid) ||
+                    !usersById.TryGetValue(uid, out var user))
+                {
+                    failed.Add($"{m.IngameName} — user not found");
+                    continue;
+                }
+
+                try
+                {
+                    var dm = await user.CreateDMChannelAsync();
+                    await dm.SendMessageAsync(
+                        $"🏦 **Bank Donation Reminder**\n\n" +
+                        $"Hello **{m.IngameName}**,\n" +
+                        $"You have not paid your weekly bank donation.\n\n" +
+                        $"Please donate in <#{DonationChannelId}>.\n" +
+                        $"Fines are issued at **18:00 UTC on Sunday**."
+                    );
+
+                    sent++;
+                    await Task.Delay(1200);
+                }
+                catch
+                {
+                    failed.Add($"{m.IngameName} — DM failed");
+                }
+            }
+
+            var fields = new Dictionary<string, string>
+            {
+                { "Mode", "AUTO (Mon/Wed/Fri 18:00 UTC)" },
+                { "Unpaid", unpaid.Count.ToString() },
+                { "DMs Sent", sent.ToString() },
+                { "Failed", failed.Count.ToString() }
+            };
+
+            if (failed.Any())
+                fields["Failures"] = string.Join("\n", failed.Take(15));
+
+            await LogOfficer("📩 Automatic Bank Reminder", fields);
         }
 
         // ===================================================================
