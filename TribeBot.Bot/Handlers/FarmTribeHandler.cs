@@ -803,71 +803,102 @@ namespace TribeBot.Bot.Handlers
 
             await DeferAsync(ephemeral: true);
 
-            // Validate tribe
-            var tribe = await _farmTribeService.GetFarmTribeByIdAsync(farmTribeId);
-            if (tribe == null)
+            try
             {
-                await FollowupAsync(
-                    embed: EmbedHelper.Error("Farm tribe not found."),
-                    ephemeral: true);
-                return;
+                // Validate tribe
+                var tribe = await _farmTribeService.GetFarmTribeByIdAsync(farmTribeId);
+                if (tribe == null)
+                {
+                    await FollowupAsync(
+                        embed: EmbedHelper.Error("Farm tribe not found."),
+                        ephemeral: true);
+                    return;
+                }
+
+                // Get all assignments for this tribe
+                var assignments = await _assignmentService.GetAssignmentsForTribeAsync(farmTribeId);
+
+                if (assignments.Count == 0)
+                {
+                    await FollowupAsync(
+                        embed: EmbedHelper.Info(
+                            $"Farm Tribe Check — {tribe.FarmTribeName}",
+                            "No players are currently assigned to this farm tribe."),
+                        ephemeral: true);
+                    return;
+                }
+
+                // ======================================================
+                // LOAD ONCE, LOOK UP IN MEMORY
+                // (GetMemberByDiscordIdAsync / GetFarmsForUserAsync each
+                //  read a whole sheet, so calling them per player hammers
+                //  the Google Sheets quota)
+                // ======================================================
+                var members = await _memberService.GetAllMembersAsync();
+                var farms = await _farmService.GetAllFarmsAsync();
+
+                // DiscordUserId (string) -> Member
+                var memberById = new Dictionary<string, Member>();
+                foreach (var m in members)
+                {
+                    memberById.TryAdd(m.DiscordUserId, m);
+                }
+
+                // DiscordUserId (string) -> farm count
+                var farmCountByUser = new Dictionary<string, int>();
+                foreach (var farm in farms)
+                {
+                    if (!farmCountByUser.TryAdd(farm.OwnerDiscordId, 1))
+                        farmCountByUser[farm.OwnerDiscordId]++;
+                }
+
+                var results = new List<(string Name, int FarmCount)>();
+
+                foreach (var assignment in assignments)
+                {
+                    if (!memberById.TryGetValue(assignment.DiscordUserId, out var member))
+                        continue;
+
+                    farmCountByUser.TryGetValue(assignment.DiscordUserId, out var farmCount);
+
+                    results.Add((member.IngameName, farmCount));
+                }
+
+                if (results.Count == 0)
+                {
+                    await FollowupAsync(
+                        embed: EmbedHelper.Info(
+                            $"Farm Tribe Check — {tribe.FarmTribeName}",
+                            "No registered members with farms found."),
+                        ephemeral: true);
+                    return;
+                }
+
+                // Sort high → low
+                var ordered = results
+                    .OrderByDescending(r => r.FarmCount)
+                    .ThenBy(r => r.Name)
+                    .ToList();
+
+                var lines = ordered.Select((r, index) =>
+                    $"{index + 1}. **{r.Name}** — `{r.FarmCount}` farms");
+
+                // Send in chunks
+                foreach (var chunk in ChunkLines(lines))
+                {
+                    await FollowupAsync(
+                        embed: EmbedHelper.Info(
+                            $"📊 Farm Tribe Check — {tribe.FarmTribeName}",
+                            chunk),
+                        ephemeral: true);
+                }
             }
-
-            // Get all assignments for this tribe
-            var assignments = await _assignmentService.GetAssignmentsForTribeAsync(farmTribeId);
-
-            if (assignments.Count == 0)
+            catch (Exception ex)
             {
+                Console.WriteLine($"[FarmTribeCheck] Failed for tribe '{farmTribeId}': {ex}");
+
                 await FollowupAsync(
-                    embed: EmbedHelper.Info(
-                        $"Farm Tribe Check — {tribe.FarmTribeName}",
-                        "No players are currently assigned to this farm tribe."),
-                    ephemeral: true);
-                return;
-            }
-
-            var results = new List<(string Name, int FarmCount)>();
-
-            foreach (var assignment in assignments)
-            {
-                var member = await _memberService
-                    .GetMemberByDiscordIdAsync(assignment.DiscordUserId);
-
-                if (member == null)
-                    continue;
-
-                var farms = await _farmService
-                    .GetFarmsForUserAsync(assignment.DiscordUserId);
-
-                results.Add((member.IngameName, farms.Count));
-            }
-
-            if (results.Count == 0)
-            {
-                await FollowupAsync(
-                    embed: EmbedHelper.Info(
-                        $"Farm Tribe Check — {tribe.FarmTribeName}",
-                        "No registered members with farms found."),
-                    ephemeral: true);
-                return;
-            }
-
-            // Sort high → low
-            var ordered = results
-                .OrderByDescending(r => r.FarmCount)
-                .ThenBy(r => r.Name)
-                .ToList();
-
-            var lines = ordered.Select((r, index) =>
-                $"{index + 1}. **{r.Name}** — `{r.FarmCount}` farms");
-
-            // Send in chunks
-            foreach (var chunk in ChunkLines(lines))
-            {
-                await FollowupAsync(
-                    embed: EmbedHelper.Info(
-                        $"📊 Farm Tribe Check — {tribe.FarmTribeName}",
-                        chunk),
+                    embed: EmbedHelper.Error($"Farm tribe check failed: {ex.Message}"),
                     ephemeral: true);
             }
         }
