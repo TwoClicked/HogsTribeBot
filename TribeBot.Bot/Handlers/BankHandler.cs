@@ -391,6 +391,14 @@ namespace TribeBot.Bot.Handlers
                 await message.Channel.SendMessageAsync(embed:
                     EmbedHelper.Success($"🎉 You have paid your weekly donation!{aheadText}"));
             }
+            else
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error(
+                        $"You have **NOT** paid your weekly donation.\n" +
+                        $"Upload your screenshot in <#{DonationChannelId}>."
+                    ));
+            }
         }
 
         // ===================================================================
