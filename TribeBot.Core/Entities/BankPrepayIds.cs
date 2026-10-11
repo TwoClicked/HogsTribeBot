@@ -15,5 +15,8 @@
         // Custom ID format: {prefix}:{memberDiscordId}:{weeks}:{uploadMessageId}
         public const string Approve = "bankprepay_approve";
         public const string Deny = "bankprepay_deny";
+
+        // Custom ID format: {prefix}:{memberDiscordId}:{weeks}:{uploadMessageId}:{requestMessageId}
+        public const string DenyModal = "bankprepay_denymodal";
     }
 }
