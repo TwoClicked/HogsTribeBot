@@ -63,6 +63,7 @@ namespace TribeBot.Bot.UI
             .AddField("Officer Only",
                 "`!bankunpaid` — Show unpaid members\n" +
                 "`!payfor` — Pay donations for someone else\n" +
+               $"`!bankprepay <weeks>` — Pay 1–5 weeks ahead in <#{BankPrepayIds.ChannelId}>\n" +
                 "`!bankreminder` — Send donation reminders\n")
             .WithColor(Color.Green)
             .Build();

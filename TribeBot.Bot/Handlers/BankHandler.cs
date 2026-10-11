@@ -25,6 +25,9 @@ namespace TribeBot.Bot.Handlers
 
         private readonly Dictionary<ulong, string> _payForOverride = new();
 
+        // userId → weeks requested via !bankprepay, waiting for the screenshot upload
+        private readonly Dictionary<ulong, int> _pendingPrepay = new();
+
         private const ulong DonationChannelId = 1440050111353721053;
         private const ulong FinePaymentChannelId = 1440431172160061450;
         private const ulong OfficerRoleId = 1222665812775534592;
@@ -93,6 +96,18 @@ namespace TribeBot.Bot.Handlers
             if (message.Channel.Id == DonationChannelId && message.Attachments.Any())
             {
                 await HandleDonationUpload(message);
+                return true;
+            }
+
+            if (content.StartsWith("!bankprepay"))
+            {
+                await HandleBankPrepayCommand(message);
+                return true;
+            }
+
+            if (message.Channel.Id == BankPrepayIds.ChannelId && message.Attachments.Any())
+            {
+                await HandlePrepayUpload(message);
                 return true;
             }
 
@@ -354,16 +369,27 @@ namespace TribeBot.Bot.Handlers
 
             if (total > 0)
             {
+                var now = DateTime.UtcNow;
+                int daysSinceMonday = ((int)now.DayOfWeek + 6) % 7;
+                DateTime currentWeek = now.Date.AddDays(-daysSinceMonday);
+
+                var paidWeeks = (await _donationService.GetPaidWeekStartsForUserAsync(discordId)).ToHashSet();
+
+                // Count consecutive paid weeks after this one
+                int ahead = 0;
+                var check = currentWeek.AddDays(7);
+                while (paidWeeks.Contains(check.Date))
+                {
+                    ahead++;
+                    check = check.AddDays(7);
+                }
+
+                string aheadText = ahead > 0
+                    ? $"\n📅 Prepaid **{ahead}** more week(s), up to the week of **{check.AddDays(-7):yyyy-MM-dd}**."
+                    : "";
+
                 await message.Channel.SendMessageAsync(embed:
-                    EmbedHelper.Success("🎉 You have paid your weekly donation!"));
-            }
-            else
-            {
-                await message.Channel.SendMessageAsync(embed:
-                    EmbedHelper.Error(
-                        $"You have **NOT** paid your weekly donation.\n" +
-                        $"Upload your screenshot in <#{DonationChannelId}>."
-                    ));
+                    EmbedHelper.Success($"🎉 You have paid your weekly donation!{aheadText}"));
             }
         }
 
@@ -634,5 +660,131 @@ namespace TribeBot.Bot.Handlers
 
             return true;
         }
+
+        // ===================================================================
+        // !BANKPREPAY
+        // ===================================================================
+        private async Task HandleBankPrepayCommand(SocketMessage message)
+        {
+            if (message.Channel.Id != BankPrepayIds.ChannelId)
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error($"`!bankprepay` can only be used in <#{BankPrepayIds.ChannelId}>."));
+                return;
+            }
+
+            var member = await _memberService.GetMemberByDiscordIdAsync(message.Author.Id.ToString());
+            if (member == null)
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("You are not registered. Use `!register`."));
+                return;
+            }
+
+            string args = message.Content.Substring("!bankprepay".Length).Trim();
+
+            if (!int.TryParse(args, out int weeks) || weeks < 1 || weeks > BankPrepayIds.MaxWeeksPerRequest)
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning(
+                        $"Usage: `!bankprepay <weeks>` (1–{BankPrepayIds.MaxWeeksPerRequest})\n\n" +
+                        $"Per week: **{BankPrepayIds.FoodWoodStonePerWeek:N0}** Food, Wood and Stone + " +
+                        $"**{BankPrepayIds.GoldPerWeek:N0}** Gold"));
+                return;
+            }
+
+            var weekStarts = await _donationService.GetNextUnpaidWeekStartsAsync(member.DiscordUserId, weeks);
+            string range = FormatWeekRange(weekStarts);
+
+            int fws = BankPrepayIds.FoodWoodStonePerWeek * weeks;
+            int gold = BankPrepayIds.GoldPerWeek * weeks;
+
+            _pendingPrepay[message.Author.Id] = weeks;
+
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info("Bank Prepay",
+                    $"**{weeks}** week(s) for **{member.IngameName}**\n" +
+                    $"Covers: {range}\n\n" +
+                    $"🌾 Food: **{fws:N0}**\n" +
+                    $"🪵 Wood: **{fws:N0}**\n" +
+                    $"🪨 Stone: **{fws:N0}**\n" +
+                    $"🪙 Gold: **{gold:N0}**\n\n" +
+                    $"Pay this in-game, then upload **all screenshots in one message** here.\n" +
+                    $"An officer will review it."));
+        }
+
+        private async Task HandlePrepayUpload(SocketMessage message)
+        {
+            if (!_pendingPrepay.TryGetValue(message.Author.Id, out int weeks))
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Warning("Type `!bankprepay <weeks>` first, then upload your screenshots."));
+                return;
+            }
+
+            if (!message.Attachments.Any(a => a.ContentType != null && a.ContentType.StartsWith("image")))
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Please upload your screenshots as images."));
+                return;
+            }
+
+            var member = await _memberService.GetMemberByDiscordIdAsync(message.Author.Id.ToString());
+            if (member == null)
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("You are not registered. Use `!register`."));
+                return;
+            }
+
+            _pendingPrepay.Remove(message.Author.Id);
+
+            var weekStarts = await _donationService.GetNextUnpaidWeekStartsAsync(member.DiscordUserId, weeks);
+
+            int fws = BankPrepayIds.FoodWoodStonePerWeek * weeks;
+            int gold = BankPrepayIds.GoldPerWeek * weeks;
+
+            var fields = new Dictionary<string, string>
+    {
+        { "Member", $"{member.IngameName} ({message.Author.Mention})" },
+        { "Weeks", weeks.ToString() },
+        { "Expected Weeks", FormatWeekRange(weekStarts) },
+        { "Food / Wood / Stone", $"{fws:N0} each" },
+        { "Gold", gold.ToString("N0") },
+        { "Screenshots", $"[Jump to upload]({message.GetJumpUrl()})" }
+    };
+
+            string idSuffix = $"{member.DiscordUserId}:{weeks}:{message.Id}";
+
+            var buttons = new ComponentBuilder()
+                .WithButton("Approve", $"{BankPrepayIds.Approve}:{idSuffix}", ButtonStyle.Success)
+                .WithButton("Deny", $"{BankPrepayIds.Deny}:{idSuffix}", ButtonStyle.Danger);
+
+            if (OfficerLog == null)
+            {
+                await message.Channel.SendMessageAsync(embed:
+                    EmbedHelper.Error("Could not reach the officer channel. Please contact an officer."));
+                return;
+            }
+
+            await OfficerLog.SendMessageAsync(
+                embed: EmbedHelper.Log("Bank Prepay Request", fields),
+                components: buttons.Build());
+
+            await message.AddReactionAsync(new Emoji("⏳"));
+            await message.Channel.SendMessageAsync(embed:
+                EmbedHelper.Info("Bank Prepay", "Your screenshots were sent to the officers for approval."));
+        }
+
+        private static string FormatWeekRange(List<DateTime> weekStarts)
+        {
+            if (weekStarts.Count == 0)
+                return "—";
+
+            return weekStarts.Count == 1
+                ? $"week of {weekStarts[0]:yyyy-MM-dd}"
+                : $"week of {weekStarts.First():yyyy-MM-dd} → week of {weekStarts.Last():yyyy-MM-dd}";
+        }
+
     }
 }

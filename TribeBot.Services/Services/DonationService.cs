@@ -75,5 +75,67 @@ namespace TribeBot.Services.Services
                 .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
         }
 
+        private static DateTime GetCurrentWeekStartUtc()
+        {
+            var now = DateTime.UtcNow;
+            int daysSinceMonday = ((int)now.DayOfWeek + 6) % 7;
+            return now.Date.AddDays(-daysSinceMonday);
+        }
+
+        public async Task<List<DateTime>> GetPaidWeekStartsForUserAsync(string discordUserId)
+        {
+            var donations = await _dataStore.GetDonationsForUserAsync(discordUserId);
+
+            return donations
+                .Where(d => d.Amount > 0 && d.WeekStartUtc != DateTime.MinValue)
+                .Select(d => d.WeekStartUtc.Date)
+                .Distinct()
+                .OrderBy(d => d)
+                .ToList();
+        }
+
+        public async Task<List<DateTime>> GetNextUnpaidWeekStartsAsync(string discordUserId, int weeks)
+        {
+            var alreadyPaid = (await GetPaidWeekStartsForUserAsync(discordUserId)).ToHashSet();
+
+            var result = new List<DateTime>();
+            var candidate = GetCurrentWeekStartUtc();
+
+            while (result.Count < weeks)
+            {
+                if (!alreadyPaid.Contains(candidate.Date))
+                    result.Add(candidate);
+
+                candidate = candidate.AddDays(7);
+            }
+
+            return result;
+        }
+
+        public async Task<List<DateTime>> AddPrepaidWeeksAsync(
+            Member member, int weeks, int amountPerWeek, DateTime timestampUtc)
+        {
+            if (weeks <= 0)
+                return new List<DateTime>();
+
+            var weekStarts = await GetNextUnpaidWeekStartsAsync(member.DiscordUserId, weeks);
+
+            var records = weekStarts
+                .Select(ws => new DonationRecord
+                {
+                    DiscordUserId = member.DiscordUserId,
+                    IngameName = member.IngameName,
+                    Amount = amountPerWeek,
+                    TimestampUtc = timestampUtc,
+                    WeekStartUtc = ws,
+                    WeekEndUtc = ws.AddDays(7)
+                })
+                .ToList();
+
+            await _dataStore.AddDonationsAsync(records);
+
+            return weekStarts;
+        }
+
     }
 }

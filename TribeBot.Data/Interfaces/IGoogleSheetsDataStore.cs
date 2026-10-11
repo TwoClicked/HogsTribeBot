@@ -61,6 +61,12 @@ namespace TribeBot.Data.Interfaces
         // Retrieve all donations for a specific week (UTC start)
         Task<List<DonationRecord>> GetDonationsForWeekAsync(DateTime weekStartUtc);
 
+        // Append several donation rows in a single API call (used for prepaid weeks)
+        Task AddDonationsAsync(List<DonationRecord> records);
+
+        // All donations for one member across every week (single sheet read)
+        Task<List<DonationRecord>> GetDonationsForUserAsync(string discordUserId);
+
 
         // ==========================================================================
         // FINES

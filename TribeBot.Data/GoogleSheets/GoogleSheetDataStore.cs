@@ -143,7 +143,7 @@ namespace TribeBot.Data.GoogleSheets
             int index = members.FindIndex(m => m.DiscordUserId == member.DiscordUserId);
             var values = new List<object>
             {
-                member.DiscordUserId,
+                AsText(member.DiscordUserId),
                 member.IngameName,
                 member.IngameId,
                 member.Might,
@@ -184,7 +184,7 @@ namespace TribeBot.Data.GoogleSheets
         {
             var values = new List<object>
             {
-                reg.DiscordUserId,
+                AsText(reg.DiscordUserId),
                 reg.IngameName,
                 reg.AppliedAtUtc.ToString("o")
             };
@@ -279,11 +279,13 @@ namespace TribeBot.Data.GoogleSheets
         // ------------------------------------------------------
         // DONATIONS
         // ------------------------------------------------------
+
+
         public async Task AddDonationAsync(DonationRecord record)
         {
             var values = new List<object>
             {
-                record.DiscordUserId,
+                AsText(record.DiscordUserId),
                 record.IngameName,
                 record.Amount,
                 record.TimestampUtc.ToString("o"),
@@ -332,6 +334,61 @@ namespace TribeBot.Data.GoogleSheets
             return list;
         }
 
+        public async Task AddDonationsAsync(List<DonationRecord> records)
+        {
+            if (records == null || records.Count == 0)
+                return;
+
+            // One append for all rows — avoids hitting the Sheets rate limit
+            var rows = records
+                .Select(r => (IList<object>)new List<object>
+                {
+            r.DiscordUserId,
+            r.IngameName,
+            r.Amount,
+            r.TimestampUtc.ToString("o"),
+            r.WeekStartUtc.ToString("o"),
+            r.WeekEndUtc.ToString("o")
+                })
+                .ToList();
+
+            var append = _sheetsService.Spreadsheets.Values.Append(
+                new ValueRange { Values = rows },
+                _spreadsheetId,
+                $"{DonationsSheet}!A:F");
+
+            append.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+            await append.ExecuteAsync();
+        }
+
+        public async Task<List<DonationRecord>> GetDonationsForUserAsync(string discordUserId)
+        {
+            var request = _sheetsService.Spreadsheets.Values.Get(_spreadsheetId, $"{DonationsSheet}!A2:F");
+            var response = await request.ExecuteAsync();
+            var rows = response.Values;
+
+            var list = new List<DonationRecord>();
+            if (rows == null) return list;
+
+            foreach (var row in rows)
+            {
+                if (row.Count < 6) continue;
+                if (row[0]?.ToString() != discordUserId) continue;
+
+                list.Add(new DonationRecord
+                {
+                    DiscordUserId = row[0].ToString(),
+                    IngameName = row[1].ToString(),
+                    Amount = int.TryParse(row[2].ToString(), out var am) ? am : 0,
+                    TimestampUtc = DateTime.TryParse(row[3].ToString(), out var ts) ? ts : DateTime.MinValue,
+                    WeekStartUtc = DateTime.TryParse(row[4]?.ToString(), out var wk) ? wk : DateTime.MinValue,
+                    WeekEndUtc = DateTime.TryParse(row[5].ToString(), out var we) ? we : DateTime.MinValue
+                });
+            }
+
+            return list;
+        }
+
         public async Task<bool> RemoveMemberByDiscordIdAsync(string discordId)
         {
             var members = await GetAllMembersAsync();
@@ -374,7 +431,7 @@ namespace TribeBot.Data.GoogleSheets
             var values = new List<object>
             {
                 fine.FineId,
-                fine.DiscordUserId,
+                AsText(fine.DiscordUserId),
                 fine.IngameName,
                 fine.Amount,
                 fine.FineType,
@@ -436,7 +493,7 @@ namespace TribeBot.Data.GoogleSheets
             var values = new List<object>
             {
                fine.FineId,
-               fine.DiscordUserId,
+               AsText(fine.DiscordUserId),
                fine.IngameName,
                fine.Amount,
                fine.FineType,
@@ -502,7 +559,7 @@ namespace TribeBot.Data.GoogleSheets
                 poll.Question,
                 poll.EndDateUtc.ToString("o"),
                 Newtonsoft.Json.JsonConvert.SerializeObject(poll.Options),
-                poll.CreatedByDiscordId,
+                AsText(poll.CreatedByDiscordId),
                 poll.CreatedAtUtc.ToString("o")
             };
 
@@ -589,7 +646,7 @@ namespace TribeBot.Data.GoogleSheets
             var values = new List<object>
              {
                  vote.PollId,
-                 vote.DiscordUserId,
+                 AsText(vote.DiscordUserId),
                  vote.IngameName,
                  vote.Choice,
                  vote.TimestampUtc.ToString("o")
@@ -798,7 +855,7 @@ namespace TribeBot.Data.GoogleSheets
             {
                 values.Add(new List<object>
         {
-            reg.DiscordUserId,
+            AsText(reg.DiscordUserId),
             reg.IngameName,
             reg.AppliedAtUtc.ToString("o")
         });
@@ -831,7 +888,7 @@ namespace TribeBot.Data.GoogleSheets
                 evt.EventDateUtc.ToString("o"),
                 evt.ReminderOffsetHours,
                 evt.Message,
-                evt.CreatedBy,
+                AsText(evt.CreatedBy),
                 evt.CreatedAtUtc.ToString("o"),
                 evt.ReminderSent,
                 evt.Completed
@@ -900,7 +957,7 @@ namespace TribeBot.Data.GoogleSheets
                 evt.EventDateUtc.ToString("o"),
                 evt.ReminderOffsetHours,
                 evt.Message,
-                evt.CreatedBy,
+                AsText(evt.CreatedBy),
                 evt.CreatedAtUtc.ToString("o"),
                 evt.ReminderSent,
                 evt.Completed
@@ -960,7 +1017,7 @@ namespace TribeBot.Data.GoogleSheets
             var values = new List<object>
              {
                  title,
-                 discordUserId,
+                 AsText(discordUserId),
                  DateTime.UtcNow.ToString("o")
              };
 
@@ -1152,7 +1209,7 @@ namespace TribeBot.Data.GoogleSheets
             {
                 Values = new List<IList<object>>
         {
-            new List<object> { key, discordUserId }
+            new List<object> { key, AsText(discordUserId) }
         }
             };
 
@@ -1316,7 +1373,7 @@ namespace TribeBot.Data.GoogleSheets
     {
         farm.FarmId,
         farm.FarmName,
-        farm.OwnerDiscordId,
+        AsText(farm.OwnerDiscordId),
         farm.OwnerIngameName,
         farm.RegisteredUtc.ToString("o")
     };
@@ -1542,7 +1599,7 @@ namespace TribeBot.Data.GoogleSheets
         {
             var values = new List<object>
     {
-        assignment.DiscordUserId,
+        AsText(assignment.DiscordUserId),
         assignment.FarmTribeId,
         assignment.AssignedUtc.ToString("o")
     };
@@ -1950,7 +2007,7 @@ namespace TribeBot.Data.GoogleSheets
             return rows.Select(r => new RaidSignup
             {
                 RaidId = r[0].ToString()!,
-                UserId = ulong.Parse(r[1].ToString()!,CultureInfo.InvariantCulture),
+                UserId = ulong.Parse(r[1].ToString()!, CultureInfo.InvariantCulture),
                 Response = Enum.Parse<RaidSignupResponse>(r[2].ToString()!),
                 UpdatedUtc = DateTime.Parse(r[3].ToString()!).ToUniversalTime()
             }).ToList();
@@ -2123,12 +2180,18 @@ namespace TribeBot.Data.GoogleSheets
             return list;
         }
 
+        // Forces sheet to store discord id as text (No more rounding or formula's if the id ends on 0)
+        private static string AsText(string? id)
+        {
+            return string.IsNullOrEmpty(id) ? "" : "'" + id;
+        }
+
         public async Task AddDeliveryEntryAsync(DeliveryEntry entry)
         {
             var values = new List<object>
     {
         entry.EventId,
-        entry.DiscordUserId,
+        AsText(entry.DiscordUserId),
         entry.IngameName,
         entry.SubmissionType,
         entry.Amount,
