@@ -1,6 +1,6 @@
 # 🐗 HogsTribeBot
 
-A Discord bot for managing tribe operations in **Viking Rise**, built for the **HOGS** community. Handles member registration, bank donations, fines, delivery events, farms and farm tribes, KvK scheduling, raid signups, reign queues, title rotations, and more — all backed by Google Sheets as the database.
+A Discord bot for managing tribe operations in **Viking Rise**, built for the **HOGS** community. Handles member registration, bank donations (including prepaying weeks ahead), fines, delivery events, farms and farm tribes, KvK scheduling, raid signups, reign queues, title rotations, and more — all backed by Google Sheets as the database.
 
 ---
 
@@ -53,12 +53,27 @@ HogsTribeBot/
 - Leave notifications posted to the officer log when a user leaves the server
 
 ### 💰 Bank / Donations
-- `!checkbank` — Check your weekly donation status
+- `!checkbank` — Check your weekly donation status, including how many weeks you've prepaid ahead
 - `!bankunpaid` — List unpaid members *(officer)*
-- `!payfor` — Pay donations on behalf of a member *(officer)*
+- `!payfor <name | @user>` — Make your next upload count for another member (donation and fine payment channels)
 - `!bankreminder` — Send donation reminders manually *(officer)*
 - **Automatic bank reminders** — Mon / Wed / Fri at 18:00 UTC
 - **Automatic weekly audit** — Sunday 18:00 UTC; unpaid, non-exempt members are fined and DM'd, results logged to the officer channel
+
+### 🏦 Bank Prepay
+Members can pay the weekly bank in advance, **1–5 weeks per request**, in the dedicated prepay channel. An officer approves every request — the OCR is **not** used for prepays.
+
+- `!bankprepay <weeks>` — Shows the cost and which weeks will be covered, then waits for the screenshots
+- **Cost per week:** 12M Food, 12M Wood, 12M Stone + 8M Gold
+- Screenshots are posted in **one message** → bot reacts ⏳ and posts the request in the officer log with **Approve** / **Deny** buttons
+- **Approve** — writes one Donations row per covered week, reacts ✅, DMs the member *(officer)*
+- **Deny** — opens a modal for a **required reason** (sent to the member by DM and logged on the request), reacts ❌ *(officer)*
+- Covered weeks start at the member's **first unpaid week** and are calculated **at approval time**, so already-paid weeks are skipped and nothing is covered twice
+- More than 5 weeks? Submit another request after approval — it continues after the last covered week
+
+**How it ties into the weekly bank:** each approved week gets a normal Donations row (`Amount` = `44,000,000`, i.e. 3 × 12M + 8M) for its `WeekStartUtc`. The Sunday audit, the Mon/Wed/Fri reminders, `!bankunpaid` and `!checkbank` already treat a week with a row as paid, so prepaid members are automatically skipped — no changes to the audit, reminder or fine logic.
+
+**Config:** channel ID, weekly costs and the button / modal custom IDs live in `BankPrepayIds`.
 
 ### 📦 Delivery Events
 - `!gold` / `!bracelet` — Submit contribution screenshots (OCR-validated)
@@ -198,6 +213,8 @@ The service only returns raw text blocks. Donation amounts and dates are extract
 - OCR date output may merge date and time without a separator; regex parsing handles formats like `05/2613:21:58`
 - Announcements that need to ping roles must be sent as plain message content — Discord doesn't fire mention notifications from embeds
 - Bank reminder / audit "already ran" guards are in-memory, so a restart within the trigger window can re-run them
+- Bank prepay: the step between `!bankprepay` and the screenshot upload is in-memory (like `!payfor`), so after a restart the member re-types the command. Pending Approve / Deny buttons **do** survive restarts — the member, weeks and upload message ID are encoded in the button's custom ID
+- Approve prepay requests **before Sunday 18:00 UTC** — if a request covers the current week and is approved after the audit, that week's fine has already been issued
 
 ---
 
