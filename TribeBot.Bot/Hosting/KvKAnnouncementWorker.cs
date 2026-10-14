@@ -70,7 +70,7 @@ namespace TribeBot.Bot.Hosting
                 //    Discord only fires notifications for mentions in message content, not embeds.
                 // 2. Kiki can parse a single plain-text message; it can't handle content + embed together.
                 string messageText =
-                    $"<@&{HogsRoleId}&{KvkAllyRoleId}>\n" +
+                    $"<@&{HogsRoleId}> <@&{KvkAllyRoleId}>\n" +
                     (string.IsNullOrWhiteSpace(evt.Description) ? "" : $"{evt.Description}\n\n") +
                     $"⏰ **{evt.EventType} Incoming**\n" +
                     $"Starts: <t:{ToUnix(evt.StartUtc)}:F> (<t:{ToUnix(evt.StartUtc)}:R>)";
