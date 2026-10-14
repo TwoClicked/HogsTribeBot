@@ -13,6 +13,7 @@ namespace TribeBot.Bot.Hosting
         private readonly DiscordSocketClient _client;
         private readonly IKvKScheduleService _kvkScheduleService;
         private const ulong KvKAnnouncementChannelId = 1557289232706306089;
+        private const ulong HogsRoleId = 1222668156271591485;
         public KvKAnnouncementWorker(
             DiscordSocketClient client,
             IKvKScheduleService kvkScheduleService)
@@ -68,6 +69,7 @@ namespace TribeBot.Bot.Hosting
                 //    Discord only fires notifications for mentions in message content, not embeds.
                 // 2. Kiki can parse a single plain-text message; it can't handle content + embed together.
                 string messageText =
+                    $"<@&{HogsRoleId}>\n" +
                     (string.IsNullOrWhiteSpace(evt.Description) ? "" : $"{evt.Description}\n\n") +
                     $"⏰ **{evt.EventType} Incoming**\n" +
                     $"Starts: <t:{ToUnix(evt.StartUtc)}:F> (<t:{ToUnix(evt.StartUtc)}:R>)";
