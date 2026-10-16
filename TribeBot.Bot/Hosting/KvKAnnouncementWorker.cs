@@ -43,7 +43,7 @@ namespace TribeBot.Bot.Hosting
             // DEBUG LOGS 
             Console.WriteLine("[KvKWorker] Tick");
             var upcoming = await _kvkScheduleService
-                .GetUpcomingEventsAsync(TimeSpan.FromHours(6));
+                .GetUpcomingEventsAsync(TimeSpan.FromHours(12));
             if (upcoming.Count == 0)
                 return;
             var channel = await _client.GetChannelAsync(KvKAnnouncementChannelId) as IMessageChannel;
