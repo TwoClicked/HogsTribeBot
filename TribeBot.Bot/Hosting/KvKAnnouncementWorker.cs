@@ -60,7 +60,7 @@ namespace TribeBot.Bot.Hosting
                   $"Now={DateTime.UtcNow:o} | " +
                   $"Announced={evt.AnnouncementSent}");
                 var timeLeft = evt.StartUtc - DateTime.UtcNow;
-                if (timeLeft.TotalHours > 6 || timeLeft.TotalMinutes < 0)
+                if (timeLeft.TotalHours > 12 || timeLeft.TotalMinutes < 0)
                     continue;
 
                 // Free-text event type — no longer restricted to gate/killingfield
