@@ -307,8 +307,6 @@ namespace TribeBot.Bot.Handlers
         // ============================================================================
         private async Task OfficerResults(SocketMessage message)
         {
-            if (!IsOfficer(message)) return;
-
             var parts = message.Content.Split(" ", 2);
             if (parts.Length < 2)
             {
@@ -365,7 +363,7 @@ namespace TribeBot.Bot.Handlers
 
                 foreach (var voter in results[opt])
                 {
-                    string line = $"• {voter.IngameName} (<@{voter.DiscordUserId}>)\n";
+                    string line = $"• {voter.IngameName})\n";
 
                     if (sb.Length + line.Length > MaxLen)
                         await FlushAsync();
