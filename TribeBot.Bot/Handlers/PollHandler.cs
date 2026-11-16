@@ -338,7 +338,7 @@ namespace TribeBot.Bot.Handlers
             async Task FlushAsync()
             {
                 if (sb.Length == 0) return;
-                await message.Channel.SendMessageAsync(sb.ToString());
+                await message.Channel.SendMessageAsync(sb.ToString()); //test
                 sb.Clear();
             }
 
